@@ -5,3 +5,9 @@ data_cache/
 results/
 .env
 .DS_Store
+
+# Third-party copyrighted source material — keep local only, never publish
+research/
+
+# Subagent-driven-development scratch (briefs, reports, diffs, ledger)
+.superpowers/
