@@ -40,7 +40,7 @@ def build_debit_spread(signal, puts, calls, spot, expiration, width=25.0):
     """
     d = signal["direction"]
     if d == "long":                              # bull call spread
-        side, typ, short_target = calls, "call", None
+        side, typ = calls, "call"
         lk, _lb, lask = _quote(side, spot)
         sk, sbid, _sa = _quote(side, lk + width)
     else:                                        # bear put spread
