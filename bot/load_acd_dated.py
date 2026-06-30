@@ -55,6 +55,8 @@ def mark_legs(df, expiration, legs):
         row = chain[(chain["type"].isin(types)) & (chain["strike"] == leg["strike"])]
         if row.empty:
             raise ValueError(f"no row for {leg['type']} {leg['strike']} @ {expiration}")
+        if len(row) > 1:
+            raise ValueError(f"duplicate rows for {leg['type']} {leg['strike']} @ {expiration}")
         bid, ask = float(row["bid"].iloc[0]), float(row["ask"].iloc[0])
         if not (bid > 0 and ask > 0):
             raise ValueError(f"no quote for {leg['type']} {leg['strike']} @ {expiration}")
