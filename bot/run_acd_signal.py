@@ -40,6 +40,38 @@ def hlc_from_path(path):
     return (max(spots), min(spots), spots[-1])
 
 
+def daily_hlc():
+    """{date -> (H, L, C)} from each cached full-day path."""
+    out = {}
+    for D in cached_days():
+        try:
+            out[D] = hlc_from_path(day_path(D))
+        except Exception:
+            continue
+    return out
+
+
+def trade_signals(a_pct=0.0018):
+    """Trade-day Signals (flats excluded), pivot from the prior day's H/L/C."""
+    days = cached_days()
+    out, prev_hlc = [], None
+    for D in days:
+        try:
+            path = day_path(D)
+        except Exception:
+            prev_hlc = None
+            continue
+        if prev_hlc is not None:
+            try:
+                sig = build_acd_signal(path, prev_hlc, a_pct=a_pct)
+                if sig["direction"] != "flat":
+                    out.append({"date": D, **sig})
+            except Exception:
+                pass
+        prev_hlc = hlc_from_path(path)
+    return out
+
+
 def run():
     days = cached_days()
     print(f"Cached days: {len(days)}  ({days[0]} -> {days[-1]})\n")
@@ -82,4 +114,12 @@ def run():
 
 
 if __name__ == "__main__":
+    # --- Task 2 (Plan 3): reusable signal + HLC accessors ---
+    hlc = daily_hlc()
+    assert isinstance(hlc, dict) and len(hlc) > 700, len(hlc)
+    sigs = trade_signals()
+    assert all(s["direction"] in ("long", "short") for s in sigs), "trades only"
+    assert 250 <= len(sigs) <= 380, len(sigs)        # ~314 expected
+    print(f"Task 2 OK: {len(sigs)} trade signals, {len(hlc)} daily HLC")
+
     run()
