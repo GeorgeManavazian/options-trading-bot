@@ -31,6 +31,30 @@ def build_long_option(signal, puts, calls, spot, expiration):
             "entry_cost": ask, "max_loss": ask * 100, "width": 0.0}
 
 
+def build_debit_spread(signal, puts, calls, spot, expiration, width=25.0):
+    """Directional debit spread: long ATM, short `width` further OUT in the
+    signal direction. Bull call spread (long) / bear put spread (short).
+
+    Risk = net debit (defined); reward capped at the width. Long pays ask,
+    short receives bid.
+    """
+    d = signal["direction"]
+    if d == "long":                              # bull call spread
+        side, typ, short_target = calls, "call", None
+        lk, _lb, lask = _quote(side, spot)
+        sk, sbid, _sa = _quote(side, lk + width)
+    else:                                        # bear put spread
+        side, typ = puts, "put"
+        lk, _lb, lask = _quote(side, spot)
+        sk, sbid, _sa = _quote(side, lk - width)
+    net_debit = lask - sbid
+    return {"wrapper": "debit_spread", "direction": d, "expiration": expiration,
+            "legs": [{"strike": lk, "type": typ, "side": "long", "entry_price": lask},
+                     {"strike": sk, "type": typ, "side": "short", "entry_price": sbid}],
+            "entry_cost": net_debit, "max_loss": net_debit * 100,
+            "width": abs(sk - lk)}
+
+
 def _mock_chain():
     """A tiny parsed-style chain (spot 5000, $25 grid) for offline tests."""
     calls = pd.DataFrame({"strike": [5000, 5025, 5050, 5075],
@@ -52,3 +76,17 @@ if __name__ == "__main__":
     ps = build_long_option({"direction": "short"}, puts, calls, spot, exp)
     assert ps["legs"][0]["type"] == "put" and ps["legs"][0]["entry_price"] == 120.0, ps
     print("Task 1 OK: build_long_option buys the ATM call/put at the ask")
+
+    # --- Task 2: debit spread ---
+    d = build_debit_spread({"direction": "long"}, puts, calls, spot, exp, width=25.0)
+    assert d["legs"][0] == {"strike": 5000.0, "type": "call", "side": "long",
+                            "entry_price": 122.0}, d
+    assert d["legs"][1] == {"strike": 5025.0, "type": "call", "side": "short",
+                            "entry_price": 105.0}, d
+    assert abs(d["entry_cost"] - 17.0) < 1e-9 and d["max_loss"] == 1700.0, d
+    assert d["width"] == 25.0 and d["wrapper"] == "debit_spread", d
+
+    ds = build_debit_spread({"direction": "short"}, puts, calls, spot, exp, width=25.0)
+    # bear put: long 5000 put (ask 120), short 4975 put (bid 106) -> net 14
+    assert ds["legs"][1]["strike"] == 4975.0 and ds["max_loss"] == 1400.0, ds
+    print("Task 2 OK: build_debit_spread nets the debit + max_loss (bull call / bear put)")
