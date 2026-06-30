@@ -127,6 +127,27 @@ def build_acd_signal(path, prev_hlc, a_pct=0.0018, hold_min=7.5,
             "pivot_band": band, "range_high": high, "range_low": low}
 
 
+def rolling_3day_pivot(hlc_list):
+    """Pivot band from the trailing (up to) 3 days: highest high, lowest low,
+    last close. Fisher's multi-day trailing-stop band."""
+    window = hlc_list[-3:]
+    high = max(h for h, l, c in window)
+    low = min(l for h, l, c in window)
+    close = window[-1][2]
+    return pivot_range(high, low, close)
+
+
+def pivot_trailing_exit(direction, day_close, band):
+    """Exit a multi-day hold when the day's close falls back through the band
+    against the position. Long exits below the band low; short above the high."""
+    low_band, high_band = band
+    if direction == "long":
+        return day_close < low_band
+    if direction == "short":
+        return day_close > high_band
+    return True                                # 'flat' should never be held
+
+
 if __name__ == "__main__":
     # --- Task 2: a_value + 15-min opening range ---
     a = a_value(5000.0)                       # 0.18% of 5000
@@ -191,3 +212,17 @@ if __name__ == "__main__":
     chop = [("09:30", 5005), ("09:50", 5008), ("10:00", 5002)]
     assert build_acd_signal(chop, prev)["direction"] == "flat"
     print("Task 5 OK: build_acd_signal requires a held A that agrees with the pivot")
+
+    # --- Task 6: 3-day rolling pivot trailing stop ---
+    days = [(5050.0, 4990.0, 5030.0), (5070.0, 5010.0, 5060.0),
+            (5080.0, 5020.0, 5075.0)]
+    rband = rolling_3day_pivot(days)
+    # highest high 5080, lowest low 4990, last close 5075
+    assert abs(rband[0] - pivot_range(5080.0, 4990.0, 5075.0)[0]) < 1e-9, rband
+    # Long position: exit when the close drops below the band low.
+    assert pivot_trailing_exit("long", rband[0] - 1, rband) is True
+    assert pivot_trailing_exit("long", rband[1] + 1, rband) is False
+    # Short position: exit when the close rises above the band high.
+    assert pivot_trailing_exit("short", rband[1] + 1, rband) is True
+    assert pivot_trailing_exit("short", rband[0] - 1, rband) is False
+    print("Task 6 OK: rolling pivot trailing stop triggers on a close back through the band")
