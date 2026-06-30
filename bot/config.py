@@ -53,3 +53,30 @@ ORB_KIRK = ORBProfile()
 # Handy presets (examples — tune as we go):
 KIRK = Profile()  # SPX, $5-OTM shorts, $5 wings — the canonical 1DTE strategy
 WIDE_DELTA = Profile(strike_method="delta", target_delta=0.16, wing_width=50.0)  # our old (naive) version
+
+
+@dataclass
+class ACDProfile:
+    """Mark Fisher's ACD on SPX, multi-day swing via options. Defaults = the
+    design-spec anchors; we WILL sweep these (see strategies/ACD.md)."""
+    symbol: str = "SPX"
+    # --- signal (Plan 1) ---
+    a_pct: float = 0.0018          # A distance = 0.18% of price (Fisher's S&P anchor)
+    hold_min: float = 7.5          # breakout must hold half the 15-min range
+    range_start: str = "09:30"
+    range_end: str = "09:45"       # 15-minute opening range
+    cutoff: str = "12:00"          # latest A entry
+    # --- wrappers + data (Plans 2-3; parked here now) ---
+    dte_from: int = 30             # buy options ~30-45 DTE for the swing
+    dte_to: int = 45
+    debit_width: float = 25.0      # debit-spread wing distance ($)
+    credit_short_otm: float = 10.0 # credit-spread short strike this far OTM ($)
+    credit_width: float = 25.0     # credit-spread wing distance ($)
+    moneyness: float = 6.0         # +/- % strike band to pull from the feed
+    # --- account & risk (same sizing layer) ---
+    account: float = 10_000.0
+    risk_pct: float = 0.03
+
+
+# ACD swing spec, ready for Plans 2-3.
+ACD_DEFAULT = ACDProfile()
