@@ -55,6 +55,33 @@ def build_debit_spread(signal, puts, calls, spot, expiration, width=25.0):
             "width": abs(sk - lk)}
 
 
+def build_credit_spread(signal, puts, calls, spot, expiration,
+                        short_otm=10.0, width=25.0):
+    """Directional credit spread in the signal direction (ORB-style): sell a put
+    spread BELOW (long) / a call spread ABOVE (short).
+
+    short = `short_otm` out-of-the-money; long = `width` further out (the wing).
+    Risk = width - credit (defined, lopsided); reward = credit. Short receives
+    bid, long pays ask.
+    """
+    d = signal["direction"]
+    if d == "long":                              # sell put spread below spot
+        side, typ = puts, "put"
+        sk, sbid, _sa = _quote(side, spot - short_otm)
+        lk, _lb, lask = _quote(side, sk - width)
+    else:                                        # sell call spread above spot
+        side, typ = calls, "call"
+        sk, sbid, _sa = _quote(side, spot + short_otm)
+        lk, _lb, lask = _quote(side, sk + width)
+    credit = sbid - lask
+    real_width = abs(sk - lk)
+    return {"wrapper": "credit_spread", "direction": d, "expiration": expiration,
+            "legs": [{"strike": sk, "type": typ, "side": "short", "entry_price": sbid},
+                     {"strike": lk, "type": typ, "side": "long", "entry_price": lask}],
+            "entry_cost": -credit, "max_loss": (real_width - credit) * 100,
+            "width": real_width}
+
+
 def _mock_chain():
     """A tiny parsed-style chain (spot 5000, $25 grid) for offline tests."""
     calls = pd.DataFrame({"strike": [5000, 5025, 5050, 5075],
@@ -90,3 +117,20 @@ if __name__ == "__main__":
     # bear put: long 5000 put (ask 120), short 4975 put (bid 106) -> net 14
     assert ds["legs"][1]["strike"] == 4975.0 and ds["max_loss"] == 1400.0, ds
     print("Task 2 OK: build_debit_spread nets the debit + max_loss (bull call / bear put)")
+
+    # --- Task 3: credit spread (test grid: short_otm=25, width=25) ---
+    c = build_credit_spread({"direction": "long"}, puts, calls, spot, exp,
+                            short_otm=25.0, width=25.0)
+    # long signal -> sell put spread BELOW: short 4975 put (bid 106), long 4950 put (ask 97)
+    assert c["legs"][0] == {"strike": 4975.0, "type": "put", "side": "short",
+                            "entry_price": 106.0}, c
+    assert c["legs"][1] == {"strike": 4950.0, "type": "put", "side": "long",
+                            "entry_price": 97.0}, c
+    assert abs(c["entry_cost"] + 9.0) < 1e-9, c          # credit 9 -> entry_cost -9
+    assert c["max_loss"] == 1600.0 and c["wrapper"] == "credit_spread", c  # (25-9)*100
+
+    cs = build_credit_spread({"direction": "short"}, puts, calls, spot, exp,
+                             short_otm=25.0, width=25.0)
+    # short signal -> sell call spread ABOVE: short 5025 call (bid 105), long 5050 call (ask 93)
+    assert cs["legs"][0]["strike"] == 5025.0 and cs["max_loss"] == 1300.0, cs  # (25-12)*100
+    print("Task 3 OK: build_credit_spread nets the credit + max_loss (put below / call above)")
