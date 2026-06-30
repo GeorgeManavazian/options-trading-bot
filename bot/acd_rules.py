@@ -94,6 +94,39 @@ def pivot_bias(spot, band):
     return "neutral"
 
 
+def _flat(band, high, low):
+    return {"direction": "flat", "entry_time": None, "entry_spot": None,
+            "stop_B": None, "pivot_band": band, "range_high": high,
+            "range_low": low}
+
+
+def build_acd_signal(path, prev_hlc, a_pct=0.0018, hold_min=7.5,
+                     range_start="09:30", range_end="09:45", cutoff="12:00"):
+    """One day's ACD signal: a held A that AGREES with yesterday's pivot bias.
+
+    prev_hlc = (high, low, close) of the prior day. Returns a Signal dict; the
+    direction is 'flat' when there's no held A or the A fights the pivot.
+    """
+    high, low = opening_range(path, range_start, range_end)
+    band = pivot_range(*prev_hlc)
+    mid = (high + low) / 2.0
+    a = detect_a(path, high, low, a_value(mid, a_pct),
+                 range_end=range_end, hold_min=hold_min, cutoff=cutoff)
+    if a is None:
+        return _flat(band, high, low)
+
+    bias = pivot_bias(a["entry_spot"], band)
+    agree = (a["direction"] == "long" and bias == "bull") or \
+            (a["direction"] == "short" and bias == "bear")
+    if not agree:
+        return _flat(band, high, low)
+
+    stop_B = low if a["direction"] == "long" else high   # opposite range edge
+    return {"direction": a["direction"], "entry_time": a["entry_time"],
+            "entry_spot": a["entry_spot"], "stop_B": stop_B,
+            "pivot_band": band, "range_high": high, "range_low": low}
+
+
 if __name__ == "__main__":
     # --- Task 2: a_value + 15-min opening range ---
     a = a_value(5000.0)                       # 0.18% of 5000
@@ -138,3 +171,23 @@ if __name__ == "__main__":
     assert pivot_bias(5000.0, band) == "bear"      # below the band
     assert pivot_bias(5024.0, band) == "neutral"   # inside the band
     print("Task 4 OK: pivot_range matches Fisher's formula; bias gates correctly")
+
+    # --- Task 5: build_acd_signal (A held + pivot agreement) ---
+    # 15-min range 4998-5010; A up holds to 5023 by 09:58; pivot band below -> bull.
+    up_path = [("09:30", 5005), ("09:40", 5010), ("09:44", 4998),
+               ("09:50", 5020), ("09:52", 5021), ("09:58", 5023)]
+    prev = (4990.0, 4950.0, 4980.0)            # band well below 5023 -> bull agree
+    sig = build_acd_signal(up_path, prev)
+    assert sig["direction"] == "long", sig
+    assert sig["entry_time"] == "09:58", sig
+    assert sig["stop_B"] == 4998.0, sig        # opposite range edge
+
+    # Same A up, but pivot band ABOVE the entry spot -> bias not bull -> flat.
+    prev_high = (5100.0, 5030.0, 5090.0)       # band above 5023 -> bear/neutral
+    sig2 = build_acd_signal(up_path, prev_high)
+    assert sig2["direction"] == "flat", sig2
+
+    # No A at all (stays inside) -> flat.
+    chop = [("09:30", 5005), ("09:50", 5008), ("10:00", 5002)]
+    assert build_acd_signal(chop, prev)["direction"] == "flat"
+    print("Task 5 OK: build_acd_signal requires a held A that agrees with the pivot")
