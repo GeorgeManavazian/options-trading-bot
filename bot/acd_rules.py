@@ -59,7 +59,10 @@ def detect_a(path, high, low, a_val, range_end="09:45", hold_min=7.5,
             if tm2 < tm:
                 continue
             if tm2 - tm >= hold_min:
-                confirm = (t2, float(spot2))
+                if beyond(spot2):
+                    confirm = (t2, float(spot2))
+                else:
+                    held = False
                 break
             if not beyond(spot2):              # snapped back inside the window
                 held = False
@@ -171,6 +174,11 @@ if __name__ == "__main__":
     # Whipsaw: crosses up at 09:50 then snaps back inside at 09:52 (<7.5 min) -> None.
     whip = [("09:46", 5012), ("09:50", 5020), ("09:52", 5000)]
     assert detect_a(whip, hi, lo, av) is None, "whipsaw must be rejected"
+
+    # Sparse-bar gap: pierces up at 09:50 but the next (post-window) bar is already
+    # back inside the box -> the snap-back must NOT be confirmed as a held A.
+    gap = [("09:50", 5020), ("10:00", 5005)]
+    assert detect_a(gap, hi, lo, av) is None, "sparse-bar false-hold must be rejected"
 
     # Down side: crosses below 4989 and holds.
     down = [("09:46", 4995), ("09:50", 4988), ("09:52", 4987),
