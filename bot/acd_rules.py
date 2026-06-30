@@ -70,6 +70,30 @@ def detect_a(path, high, low, a_val, range_end="09:45", hold_min=7.5,
     return None
 
 
+def pivot_range(high, low, close):
+    """Fisher's pivot band from a prior period's H/L/C. Returns (low, high) band.
+
+        pivot  = (H + L + C) / 3
+        second = (H + L) / 2
+        diff   = | pivot - second |
+        band   = pivot ± diff
+    """
+    pivot = (float(high) + float(low) + float(close)) / 3.0
+    second = (float(high) + float(low)) / 2.0
+    diff = abs(pivot - second)
+    return (pivot - diff, pivot + diff)
+
+
+def pivot_bias(spot, band):
+    """Where today's price sits vs the pivot band -> trend gate."""
+    low_band, high_band = band
+    if spot > high_band:
+        return "bull"
+    if spot < low_band:
+        return "bear"
+    return "neutral"
+
+
 if __name__ == "__main__":
     # --- Task 2: a_value + 15-min opening range ---
     a = a_value(5000.0)                       # 0.18% of 5000
@@ -104,3 +128,13 @@ if __name__ == "__main__":
     inside = [("09:46", 5005), ("09:50", 5008), ("10:00", 5002)]
     assert detect_a(inside, hi, lo, av) is None
     print("Task 3 OK: detect_a confirms holds, rejects whipsaws, handles both sides")
+
+    # --- Task 4: pivot range + bias (Fisher's formula) ---
+    band = pivot_range(5050.0, 4990.0, 5030.0)
+    # pivot=(5050+4990+5030)/3=5023.333; second=(5050+4990)/2=5020; diff=3.333
+    assert abs(band[0] - 5020.0) < 1e-3, band
+    assert abs(band[1] - 5026.667) < 1e-3, band
+    assert pivot_bias(5030.0, band) == "bull"      # above the band
+    assert pivot_bias(5000.0, band) == "bear"      # below the band
+    assert pivot_bias(5024.0, band) == "neutral"   # inside the band
+    print("Task 4 OK: pivot_range matches Fisher's formula; bias gates correctly")
