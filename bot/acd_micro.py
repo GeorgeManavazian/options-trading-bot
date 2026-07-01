@@ -68,6 +68,7 @@ class DayResult:
     or_high: float
     or_low: float
     pivot_band: tuple
+    or_vs_pivot: str                # above|below|inside (Stage-3 context)
     events: list
     setups: list
 
@@ -197,10 +198,14 @@ def or_vs_pivot(lv):
     return "inside"
 
 
-def through_pivot(direction, level, band):
-    """Does the signal level clear the ENTIRE pivot band in the trade direction?"""
+def through_pivot(direction, level, band, or_high, or_low):
+    """True only if the signal clears the ENTIRE band AND the band lies in the PATH of the
+    move (not behind it). Long: level above the band top AND the band isn't entirely below
+    the OR. Short: level below the band bottom AND the band isn't entirely above the OR."""
     lo, hi = band
-    return level > hi if direction == "long" else level < lo
+    if direction == "long":
+        return level > hi and not (or_low > hi)
+    return level < lo and not (or_high < lo)
 
 
 # ---------------------------------------------------------------- Stage 4: setups
@@ -212,7 +217,7 @@ def setups_from_a(a_event, lv, spec):
     out = [Setup("a_held", direction, a_event.time, a_event.price, stop_or, 1, "intraday",
                  {"or_low": lv.or_low, "or_high": lv.or_high})]
     level = lv.a_up if direction == "long" else lv.a_down
-    if through_pivot(direction, level, lv.pivot_band):
+    if through_pivot(direction, level, lv.pivot_band, lv.or_high, lv.or_low):
         lo, hi = lv.pivot_band
         out.append(Setup("a_through_pivot", direction, a_event.time, a_event.price,
                          lo if direction == "long" else hi, 2, "intraday",
@@ -220,16 +225,22 @@ def setups_from_a(a_event, lv, spec):
     return out
 
 
-def setups_from_c(c_event, lv, spec):
+def setups_from_c(c_event, lv, spec, close):
+    """`close` = the day's last price (for the late-day overnight-carry condition)."""
     if c_event is None or not c_event.held:
         return []
     direction = "long" if c_event.type == "C_up" else "short"
     d_stop = (lv.or_low - spec.tick) if direction == "long" else (lv.or_high + spec.tick)
     out = [Setup("c", direction, c_event.time, c_event.price, d_stop, 1, "intraday", {"d": d_stop})]
     level = lv.c_up if direction == "long" else lv.c_down
-    if through_pivot(direction, level, lv.pivot_band):
+    if through_pivot(direction, level, lv.pivot_band, lv.or_high, lv.or_low):
         lo, hi = lv.pivot_band
-        overnight = _to_min(c_event.time) >= _to_min(spec.late_day)
+        late = _to_min(c_event.time) >= _to_min(spec.late_day)
+        if direction == "long":
+            carry = close is not None and close > hi and close > lv.c_up
+        else:
+            carry = close is not None and close < lo and close < lv.c_down
+        overnight = late and carry            # ACD.md: carry only if close beyond BOTH pivot & C
         out.append(Setup("late_day_c" if overnight else "c_through_pivot", direction,
                          c_event.time, c_event.price, lo if direction == "long" else hi, 3,
                          "overnight" if overnight else "intraday", {"pivot_band": lv.pivot_band}))
@@ -237,22 +248,26 @@ def setups_from_c(c_event, lv, spec):
 
 
 def setups_from_failed(events, lv, spec):
+    """Fade failed A/C. A failed-A fade is invalidated if the SAME-side A later holds
+    (the move that made it hold would have taken out the fade's stop)."""
     lo, hi = lv.pivot_band
+    held_a_up = any(e.type == "A_up" and e.held for e in events)
+    held_a_down = any(e.type == "A_down" and e.held for e in events)
     out = []
     for e in events:
-        if e.type == "failed_A_up":                     # fade a failed up-breakout -> short
+        if e.type == "failed_A_up" and not held_a_up:   # fade a failed up-breakout -> short
             if lo <= lv.a_up <= hi:
-                out.append(Setup("failed_a_pivot", "short", e.time, e.price, hi, 2, "intraday",
+                out.append(Setup("failed_a_pivot", "short", e.time, lv.a_up, hi, 2, "intraday",
                                  {"pivot_band": lv.pivot_band}))
             else:
-                out.append(Setup("failed_a", "short", e.time, e.price, lv.a_up + spec.tick, 1,
+                out.append(Setup("failed_a", "short", e.time, lv.a_up, lv.a_up + spec.tick, 1,
                                  "intraday", {"a": lv.a_up}))
-        elif e.type == "failed_A_down":                 # fade a failed down-breakout -> long
+        elif e.type == "failed_A_down" and not held_a_down:  # fade a failed down-breakout -> long
             if lo <= lv.a_down <= hi:
-                out.append(Setup("failed_a_pivot", "long", e.time, e.price, lo, 2, "intraday",
+                out.append(Setup("failed_a_pivot", "long", e.time, lv.a_down, lo, 2, "intraday",
                                  {"pivot_band": lv.pivot_band}))
             else:
-                out.append(Setup("failed_a", "long", e.time, e.price, lv.a_down - spec.tick, 1,
+                out.append(Setup("failed_a", "long", e.time, lv.a_down, lv.a_down - spec.tick, 1,
                                  "intraday", {"a": lv.a_down}))
         elif e.type == "failed_C_up":                   # treacherous: fade toward the OR -> short
             out.append(Setup("failed_c", "short", e.time, e.price, None, 1, "intraday", {}))
@@ -293,11 +308,12 @@ def build_day(date, bars, prior_hlc, spec=SPX):
     c_events = detect_c_events(bars, lv, spec, a_held)
     events = a_events + c_events
     c_held = next((e for e in c_events if e.type in ("C_up", "C_down") and e.held), None)
+    close = sorted(bars)[-1][1] if bars else None
     setups = (setups_from_a(a_held, lv, spec)
-              + setups_from_c(c_held, lv, spec)
+              + setups_from_c(c_held, lv, spec, close)
               + setups_from_failed(events, lv, spec)
               + setups_first_hour(bars, lv, a_held, spec))
-    return DayResult(date, lv.or_high, lv.or_low, lv.pivot_band, events, setups)
+    return DayResult(date, lv.or_high, lv.or_low, lv.pivot_band, or_vs_pivot(lv), events, setups)
 
 
 # ---------------------------------------------------------------- self-tests
@@ -308,74 +324,110 @@ def _names(items, attr="name"):
 if __name__ == "__main__":
     OR = [("09:30", 5005), ("09:38", 5010), ("09:44", 4998), ("09:45", 5002)]  # hi 5010 lo 4998
     # mid 5004 -> a=9.007 (a_up 5019.01, a_down 4988.99); c=10.508 (c_up 5020.51, c_down 4987.49)
-    PIVOT_BELOW = (4990.0, 4950.0, 4980.0)   # band ~(4970, 4976.67): below the OR, below a_up
-    PIVOT_ABOVE = (5080.0, 5030.0, 5070.0)   # band ~(5053.3, 5060): above the OR, above a_down
+    PIV_BELOW    = (4990.0, 4950.0, 4980.0)  # band (4970, 4976.67): entirely below the OR
+    PIV_STRADDLE = (5030.0, 4980.0, 5020.0)  # band (5005, 5015): straddles the OR (in the long path)
+    PIV_C_PATH   = (5030.0, 4970.0, 4985.0)  # band (4990, 5000): straddles OR, in the C-down path
+    PIV_ENGULF_A = (5040.0, 5008.0, 5009.0)  # band (5014, 5024) engulfs a_up 5019.01 (failed_a_pivot)
 
     # --- Task 1: levels ---
-    lv = compute_levels(OR, PIVOT_BELOW, SPX)
+    lv = compute_levels(OR, PIV_BELOW, SPX)
     assert lv.or_high == 5010 and lv.or_low == 4998, lv
     assert abs(lv.a_up - 5019.0072) < 1e-3, lv.a_up
     assert abs(lv.c_down - 4987.4916) < 1e-3, lv.c_down
     assert abs(lv.pivot_band[1] - 4976.6667) < 1e-3, lv.pivot_band
     print("Task 1 OK: compute_levels")
 
-    # --- Task 2/5: A held + a_through_pivot (long) ---
+    # --- Stage 3: through_pivot respects band POSITION; or_vs_pivot ---
+    assert through_pivot("long", 5019, (5005, 5015), 5010, 4998) is True     # band straddles OR
+    assert through_pivot("long", 5019, (4970, 4976), 5010, 4998) is False    # band behind (below OR)
+    assert through_pivot("short", 4987, (4990, 5000), 5010, 4998) is True    # band in the short path
+    assert through_pivot("short", 4987, (5055, 5065), 5010, 4998) is False   # band above the market
+    assert or_vs_pivot(lv) == "above"
+    print("Stage 3 OK: through_pivot geometry + or_vs_pivot")
+
+    # --- a_held + a_through_pivot; band in path -> stop TIGHTENS for the long ---
     up = OR + [("09:50", 5020), ("09:52", 5021), ("09:58", 5023)]
-    d = build_day("D1", up, PIVOT_BELOW)
+    d = build_day("D1", up, PIV_STRADDLE)
     assert any(e.type == "A_up" and e.held and e.time == "09:58" for e in d.events), d.events
-    assert _names(d.setups) == ["a_held", "a_through_pivot"], _names(d.setups)
-    assert [s for s in d.setups if s.name == "a_held"][0].stop == 4998, "A-up stop = OR low"
-    assert [s for s in d.setups if s.name == "a_through_pivot"][0].conviction == 2
-    print("Task 2/5 OK: A held + a_through_pivot")
+    a_h = [s for s in d.setups if s.name == "a_held"][0]
+    a_tp = [s for s in d.setups if s.name == "a_through_pivot"][0]
+    assert a_h.stop == 4998 and a_tp.stop == 5005 and a_tp.conviction == 2
+    assert a_tp.stop > a_h.stop, "through-pivot stop must be tighter (higher) for a long"
+    print("A OK: a_held + a_through_pivot (tighter stop)")
 
-    # --- Task 2/7: failed A up -> failed_a short ---
-    fa = OR + [("09:50", 5020), ("09:52", 5000)]        # touches a_up, snaps back inside
-    d = build_day("D2", fa, PIVOT_BELOW)
-    assert any(e.type == "failed_A_up" for e in d.events), d.events
-    assert not any(e.type == "A_up" and e.held for e in d.events)
-    fs = [s for s in d.setups if s.name == "failed_a"]
-    assert fs and fs[0].direction == "short" and abs(fs[0].stop - 5019.0172) < 1e-2, fs
-    print("Task 2/7 OK: failed A -> failed_a rubber band")
+    # a_through_pivot must NOT fire when the band is behind the move
+    d = build_day("D1b", up, PIV_BELOW)
+    assert _names(d.setups) == ["a_held"], _names(d.setups)
+    print("A OK: no a_through_pivot when band is below the OR")
 
-    # --- Task 3/6: A up held, then B, then C_down held (short) ---
-    seq = OR + [("09:50", 5020), ("09:58", 5023),       # A_up held
-                ("10:10", 4996),                          # B (back to OR low)
-                ("10:20", 4985), ("10:22", 4984), ("10:30", 4983)]  # C_down held (<4987.49)
-    d = build_day("D3", seq, PIVOT_BELOW)
-    assert any(e.type == "B" for e in d.events), d.events
-    assert any(e.type == "C_down" and e.held for e in d.events), d.events
-    cs = [s for s in d.setups if s.name == "c"]
-    assert cs and cs[0].direction == "short", cs
-    # c_down 4987.49 is ABOVE the pivot band (4970-4976.67) -> NOT through pivot here
-    assert not any(s.name in ("c_through_pivot", "late_day_c") for s in d.setups)
-    print("Task 3/6 OK: B + C_down held -> c setup")
+    # --- failed A up -> failed_a short (entry AT the A level) ---
+    fa = OR + [("09:50", 5020), ("09:52", 5000)]
+    d = build_day("D2", fa, PIV_BELOW)
+    assert any(e.type == "failed_A_up" for e in d.events) and not any(
+        e.type == "A_up" and e.held for e in d.events)
+    fs = [s for s in d.setups if s.name == "failed_a"][0]
+    assert fs.direction == "short" and abs(fs.entry_price - 5019.0072) < 1e-2
+    assert abs(fs.stop - 5019.0172) < 1e-2, fs
+    print("failed_a OK: rubber-band fade at the A level")
 
-    # --- Task 6: late_day_c (C_down through a pivot that sits ABOVE, late in the day) ---
-    # Use PIVOT_ABOVE (band 5053-5060). For C_down to go through it we need c_down < 5053:
-    # here or_low 4998 -> c_down 4987 < 5053 -> through pivot (short). Confirm late (>=14:30).
-    late = OR + [("09:50", 5020), ("09:58", 5023),
-                 ("10:10", 4996),
-                 ("14:40", 4985), ("14:44", 4984), ("14:52", 4983)]
-    d = build_day("D4", late, PIVOT_ABOVE)
+    # --- failed_a_pivot: failed A up with a_up INSIDE the band ---
+    d = build_day("D2b", fa, PIV_ENGULF_A)
+    fp = [s for s in d.setups if s.name == "failed_a_pivot"]
+    assert fp and fp[0].direction == "short" and fp[0].conviction == 2, _names(d.setups)
+    print("failed_a_pivot OK")
+
+    # --- failed-A fade dropped once the same-side A later HOLDS ---
+    fa_then_a = OR + [("09:50", 5020), ("09:52", 5000), ("10:20", 5020), ("10:30", 5023)]
+    d = build_day("D2c", fa_then_a, PIV_BELOW)
+    assert not any(s.name == "failed_a" for s in d.setups), "failed_a must be dropped"
+    assert any(e.type == "A_up" and e.held for e in d.events)
+    print("failed_a OK: dropped when same-side A later holds")
+
+    # --- A up held, B, C_down held: plain c (band below -> NOT through pivot) ---
+    seq = OR + [("09:50", 5020), ("09:58", 5023), ("10:10", 4996),
+                ("10:20", 4985), ("10:22", 4984), ("10:30", 4983)]
+    d = build_day("D3", seq, PIV_BELOW)
+    assert any(e.type == "B" for e in d.events) and any(
+        e.type == "C_down" and e.held for e in d.events)
+    assert [s for s in d.setups if s.name == "c"] and not any(
+        s.name in ("c_through_pivot", "late_day_c") for s in d.setups)
+    print("c OK: B + C_down held (plain c)")
+
+    # --- c_through_pivot INTRADAY (band in the C-down path, confirmed before late_day) ---
+    d = build_day("D3b", seq, PIV_C_PATH)
+    ctp = [s for s in d.setups if s.name == "c_through_pivot"]
+    assert ctp and ctp[0].conviction == 3 and ctp[0].horizon == "intraday", _names(d.setups)
+    print("c_through_pivot OK (intraday)")
+
+    # --- late_day_c: through pivot, late, close beyond BOTH pivot & C -> overnight ---
+    late = OR + [("09:50", 5020), ("09:58", 5023), ("10:10", 4996),
+                 ("14:40", 4985), ("14:44", 4984), ("14:52", 4983)]   # close 4983 < 4990 & < 4987.49
+    d = build_day("D4", late, PIV_C_PATH)
     ld = [s for s in d.setups if s.name == "late_day_c"]
     assert ld and ld[0].horizon == "overnight" and ld[0].conviction == 3, _names(d.setups)
-    print("Task 6 OK: late_day_c overnight")
+    print("late_day_c OK: overnight carry when close confirms")
 
-    # --- Task 8: pivot first_hour (long) ---
-    # A_up in first hour, first-hour low engulfed by pivot band, close near first-hour high.
+    # --- failed_C: A up held, B, C_down touched but NOT held -> failed_c long, no stop ---
+    fc = OR + [("09:50", 5020), ("09:58", 5023), ("10:10", 4996),
+               ("10:20", 4985), ("10:22", 4996)]        # touches C_down then snaps back inside
+    d = build_day("D4b", fc, PIV_BELOW)
+    assert any(e.type == "failed_C_down" for e in d.events), [e.type for e in d.events]
+    fcs = [s for s in d.setups if s.name == "failed_c"]
+    assert fcs and fcs[0].direction == "long" and fcs[0].stop is None, _names(d.setups)
+    print("failed_c OK: treacherous fade, time-stop only")
+
+    # --- pivot first_hour (long) ---
     fh = [("09:30", 5055), ("09:38", 5060), ("09:44", 5050), ("09:45", 5052),
-          ("09:50", 5075), ("09:58", 5078), ("10:29", 5079)]   # closes near the high 5079
-    # OR hi 5060 lo 5050 -> a_up ~5060+9.9=5070; A_up held by 09:58. mid 5055.
+          ("09:50", 5075), ("09:58", 5078), ("10:29", 5079)]
     PIV_FH = (5065.0, 5025.0, 5060.0)   # band (5045, 5055) engulfs the first-hour low 5050
     d = build_day("D5", fh, PIV_FH)
-    fhs = [s for s in d.setups if s.name == "first_hour"]
-    assert fhs and fhs[0].direction == "long", _names(d.setups)
-    print("Task 8 OK: pivot first_hour")
+    assert [s for s in d.setups if s.name == "first_hour"][0].direction == "long", _names(d.setups)
+    print("first_hour OK")
 
     # --- chop day: no A, no setups ---
     chop = [("09:30", 5005), ("09:45", 5002), ("10:00", 5004), ("11:00", 5003)]
-    d = build_day("D6", chop, PIVOT_BELOW)
-    assert d.setups == [], d.setups
-    print("Chop OK: no signal, no setups")
+    d = build_day("D6", chop, PIV_BELOW)
+    assert d.setups == [] and d.or_vs_pivot == "above", (d.setups, d.or_vs_pivot)
+    print("chop OK: no signal, no setups")
 
-    print("\nAll ACD micro-engine self-tests passed.")
+    print("\nAll ACD micro-engine self-tests passed (9/9 setups covered).")
