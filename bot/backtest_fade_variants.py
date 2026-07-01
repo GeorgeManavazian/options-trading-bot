@@ -106,6 +106,38 @@ def per_year(pairs):
     return yr
 
 
+LINEUP = [
+    Variant("V0 ref 0DTE",       "all",         "hold",   "flat",     "0DTE"),
+    Variant("V0b ref overnight", "all",         "hold",   "flat",     "overnight"),
+    Variant("V1 no_failed_c",    "no_failed_c", "hold",   "flat",     "0DTE"),
+    Variant("V2 active exit",    "all",         "active", "flat",     "0DTE"),
+    Variant("V3 throttle",       "all",         "hold",   "throttle", "0DTE"),
+    Variant("V4 blend",          "all",         "hold",   "flat",     "blend"),
+    Variant("V5 no_c+active",    "no_failed_c", "active", "flat",     "0DTE"),
+    Variant("V6 no_c+blend",     "no_failed_c", "hold",   "flat",     "blend"),
+    Variant("V7 everything",     "no_failed_c", "active", "throttle", "blend"),
+]
+
+
+def report(trades, lineup=LINEUP):
+    rows = []
+    for v in lineup:
+        r = apply_variant(trades, v)
+        p0 = weighted_returns(r, 0.0)
+        rows.append((v, score(p0), score(weighted_returns(r, 0.10))["risk_adj"], per_year(p0)))
+    rows.sort(key=lambda x: x[1]["risk_adj"], reverse=True)
+    years = sorted({y for _, _, _, yr in rows for y in yr})
+    print("\n=== FADE DRAWDOWN BAKE-OFF — ranked by RISK-ADJUSTED return ===")
+    print("(steady-kid metric; raw total shown but does NOT decide the winner)\n")
+    print(f"{'variant':<20}{'n':>4}{'win':>5}{'total':>9}{'maxDD':>8}{'risk-adj':>9}{'ra@10c':>8}  "
+          + "".join(f"{y:>8}" for y in years))
+    for v, s, ra10, yr in rows:
+        print(f"{v.name:<20}{s['n']:>4}{s['win']:>5.0%}{s['total']:>+9.0%}{s['mdd']:>8.0%}"
+              f"{s['risk_adj']:>+9.2f}{ra10:>+8.2f}  " + "".join(f"{yr.get(y, 0):>+8.0%}" for y in years))
+    print("\nNOTE: best-of-9 selection = mild overfitting; the winner needs a walk-forward before trust.")
+    return rows
+
+
 if __name__ == "__main__":
     trades = collect_fade_trades()
     assert len(trades) > 250, len(trades)
@@ -152,3 +184,13 @@ if __name__ == "__main__":
     assert abs(weighted_returns(wr_rows, 0.0)[0][1] - 1.0) < 1e-9
     assert weighted_returns(wr_rows, 0.10)[0][1] < 1.0     # slippage haircut lowers the return
     print("OK score / per_year / weighted_returns")
+
+    print("\nBuilding the bake-off (cached)...")
+    all_trades = collect_fade_trades()
+    ranked = report(all_trades)
+    # cross-check: V0 (all/hold/flat/0DTE, weights all 1.0) must reproduce ④b's
+    # 0DTE/debit_spread reference: total +5180% (=51.8) and maxDD 796% (=7.96).
+    v0 = next(s for v, s, _, _ in ranked if v.name == "V0 ref 0DTE")
+    assert 51 < v0["total"] < 53, f"V0 total {v0['total']} != ~51.8 (④b regression)"
+    assert 7.5 < v0["mdd"] < 8.2, f"V0 maxDD {v0['mdd']} != ~7.96 (④b regression)"
+    print("OK cross-check: V0 reproduces the ④b 0DTE/debit_spread reference")
