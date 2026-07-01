@@ -9,10 +9,12 @@
 from acd_rules import rolling_3day_pivot, pivot_trailing_exit
 
 
-def simulate_hold(direction, position, expiration, entry_date, day_list, hlc, mark_fn):
+def simulate_hold(direction, position, expiration, entry_date, day_list, hlc, mark_fn,
+                  stop_B=None):
     """Walk the position forward from entry_date. Exit on (1) expiry, (2) 3-day pivot
-    trailing stop closing back through the band, or (3) entry-day B is folded in by the
-    caller via the signal's stop_B check before calling. Returns (pnl, exit_date, reason).
+    trailing stop closing back through the band, or (3) the entry-day B stop: if stop_B is
+    given and the entry-day close is already beyond it against the position, exit that day.
+    Returns (pnl, exit_date, reason).
 
     mark_fn(date, expiration, legs) -> net_exit or None. On a None (marking gap) we carry
     the most recent good mark; a trade that never marks returns (None, exit_date, "no_mark").
@@ -27,6 +29,13 @@ def simulate_hold(direction, position, expiration, entry_date, day_list, hlc, ma
 
     def _pnl(net_exit):
         return round((net_exit - entry_cost) * 100, 2)
+
+    if stop_B is not None and entry_date in hlc:          # (3) entry-day B stop
+        close0 = hlc[entry_date][2]
+        if (direction == "long" and close0 < stop_B) or \
+           (direction == "short" and close0 > stop_B):
+            return (_pnl(last_mark) if last_mark is not None else None, entry_date,
+                    "b_stop" if last_mark is not None else "no_mark")
 
     for d in held:
         m = mark_fn(d, expiration, legs)
@@ -101,8 +110,11 @@ def run_acd_backtest(profile=None, sym="SPX", slippage_per_leg=0.0,
         D = sig["date"]
         try:
             puts, calls, spot, exp = pick_entry_chain(chain_fn(sym, D), target_dte)
-        except Exception:
-            continue                                     # entry chain missing -> skip day
+        except FileNotFoundError:
+            continue                                     # entry chain not pulled -> skip day
+        except Exception as e:
+            print(f"  entry-chain error {D}: {repr(e)[:70]}", flush=True)
+            continue
         for name, build in builders.items():
             try:
                 pos = build(sig, puts, calls, spot, exp)
@@ -115,7 +127,8 @@ def run_acd_backtest(profile=None, sym="SPX", slippage_per_leg=0.0,
                 continue
             mark_fn = (lambda d, e, legs, _cf=chain_fn: _safe_mark(_cf, sym, d, e, legs))
             pnl, xd, reason = simulate_hold(
-                sig["direction"], pos, exp, D, days, hlc, mark_fn)
+                sig["direction"], pos, exp, D, days, hlc, mark_fn,
+                stop_B=sig.get("stop_B"))
             if pnl is None:                               # never marked -> drop + count
                 dropped[name] += 1
                 continue
@@ -135,6 +148,7 @@ def report_wrappers(results, dropped=None):
     """Per-wrapper risk-adjusted return (total / max drawdown) + Sharpe + win + per-year,
     then the winner. All in % return on capital-at-risk (account-independent)."""
     import statistics
+    from collections import Counter
     from itertools import accumulate
     from backtest import max_drawdown
     from backtest_chains import yearly_report
@@ -152,15 +166,20 @@ def report_wrappers(results, dropped=None):
         total = sum(rets)
         equity = list(accumulate(rets))
         mdd = max_drawdown(equity)
-        risk_adj = total / abs(mdd) if mdd else float("inf")
+        if mdd:                                          # sign-aware: never crown a loser
+            risk_adj = total / abs(mdd)
+        else:
+            risk_adj = float("inf") if total > 0 else (float("-inf") if total < 0 else 0.0)
         sd = statistics.pstdev(rets)
         sharpe = statistics.mean(rets) / sd if sd > 0 else 0.0
+        reasons = dict(Counter(t["reason"] for t in trades))   # expiry/end reveal mark-staleness exposure
         print(f"\n{name}  ({n} trades, {dropped.get(name, 0)} dropped)")
         print(f"  win rate:       {wins / n:.0%}")
         print(f"  total return:   {total:+.0%} on risk")
         print(f"  max drawdown:   {mdd:.0%} of risk capital")
         print(f"  RISK-ADJUSTED:  {risk_adj:+.2f}   (total / maxDD)  <- the yardstick")
         print(f"  Sharpe-like:    {sharpe:+.2f}")
+        print(f"  exits by reason: {reasons}")
         yearly_report(trades, label=name)
         summary.append((name, risk_adj, total, mdd, wins / n))
     if summary:
@@ -186,7 +205,13 @@ if __name__ == "__main__":
     # exits 2024-08-06 when close 4985 drops through the rising pivot band; pnl=(25-20)*100
     assert reason == "pivot_stop" and xd == "2024-08-06", (reason, xd)
     assert pnl == 500.0, pnl
-    print("Task 3 OK: simulate_hold exits on the 3-day pivot trailing stop")
+
+    # (3) entry-day B stop: entry-day close (5000) already beyond stop_B (5001) for a long.
+    pnl_b, xd_b, reason_b = simulate_hold("long", pos, "2024-09-03", "2024-08-01",
+                                          days, hlc, lambda d, e, l: 22.0, stop_B=5001.0)
+    assert reason_b == "b_stop" and xd_b == "2024-08-01", (reason_b, xd_b)
+    assert pnl_b == 200.0, pnl_b                          # (22 - 20) * 100
+    print("Task 3 OK: simulate_hold exits on pivot trailing stop AND entry-day B stop")
 
     # --- Task 4/5: harness races 3 wrappers on injected stubs (offline) ---
     import pandas as pd
