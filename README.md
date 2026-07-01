@@ -57,10 +57,10 @@ Data comes from IVolatility (end-of-day chains and one-minute intraday bars), ca
 
 ## See the evidence yourself
 
-- **[`results/v5_trade_ledger.md`](results/v5_trade_ledger.md)**: every one of the 119 trades, why it was entered, the strikes, why it exited, and the profit or loss. Nothing filtered.
-- **[`results/v5_trade_ledger.csv`](results/v5_trade_ledger.csv)**: the same ledger as a spreadsheet you can slice yourself.
-- **[`results/v5_equity_curve.png`](results/v5_equity_curve.png)**: the account curve and the drawdown underneath it.
-- **[`results/backtest_fade_bakeoff_eval_2026-07-01.md`](results/backtest_fade_bakeoff_eval_2026-07-01.md)**: the nine-variant bake-off and how V5 won.
+- **[`results/spx/v5_trade_ledger.md`](results/spx/v5_trade_ledger.md)**: every one of the 119 trades, why it was entered, the strikes, why it exited, and the profit or loss. Nothing filtered.
+- **[`results/spx/v5_trade_ledger.csv`](results/spx/v5_trade_ledger.csv)**: the same ledger as a spreadsheet you can slice yourself.
+- **[`results/spx/v5_equity_curve.png`](results/spx/v5_equity_curve.png)**: the account curve and the drawdown underneath it.
+- **[`results/spx/backtest_fade_bakeoff_eval_2026-07-01.md`](results/spx/backtest_fade_bakeoff_eval_2026-07-01.md)**: the nine-variant bake-off and how V5 won.
 
 Every P&L in the ledger is recomputed from the source prices and checked against the backtest by an assertion in the code. The ledger *is* the backtest, not a nicer retelling of it.
 
@@ -87,14 +87,23 @@ pip install pandas matplotlib ivolatility
 export IVOL_API_KEY="your-key"
 ```
 
+## Two bots, one shared brain
+
+The repo now runs **two ACD bots** that share the same instrument-agnostic engine:
+
+- **SPX fade bot (V5)** — the S&P options strategy this README describes.
+- **Crude-futures ACD bot** — the same ACD method applied to crude oil (CL) via Databento data. Its phase-1 signal bot graded **79/100 → Deploy**: the breakout half of ACD, which sat flat on the mean-reverting S&P, works on a trending market like crude. That result is what motivated running the full method on futures.
+
+Today both bots live in one `bot/` folder and share the engine directly; their outputs are separated into **`results/spx/`** and **`results/crude/`**. A future refactor will split the code into `engine/`, `spx/`, and `crude/` folders.
+
 ## Project map
 
 | Path | What's in it |
 |---|---|
 | `STATUS.md` | Where the work stands and what comes next |
 | `strategies/` | Plain-English explainer per strategy studied (`ACD.md` is the live one) |
-| `bot/` | The engine, the options overlay, the backtests, the reports |
-| `results/` | Backtest evals, the trade ledger, the equity chart |
+| `bot/` | Both bots' code + the shared ACD engine |
+| `results/spx/`, `results/crude/` | Separated results per bot (evals, ledger, charts) |
 | `docs/superpowers/` | The spec and plan behind each piece of work |
 
 ## Where it is headed

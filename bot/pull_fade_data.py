@@ -7,7 +7,7 @@ import os
 from acd_fade_signals import collect_fades, grid_cells
 from run_acd_signal import daily_hlc
 
-LOG = os.path.join(os.path.dirname(__file__), "..", "results", "fade_pull.log")
+LOG = os.path.join(os.path.dirname(__file__), "..", "results", "spx", "fade_pull.log")
 
 
 def unique_contracts(fades, calendar, width=25.0):

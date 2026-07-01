@@ -148,13 +148,13 @@ if __name__ == "__main__":
     assert 0.78 <= wins / len(rows) <= 0.86, wins / len(rows)
     print(f"OK build_ledger: {len(rows)} trades, +{tot:.0f}% on risk, win {wins/len(rows)*100:.0f}% "
           f"(per-row P&L == backtest, asserted)")
-    os.makedirs("results", exist_ok=True)
-    write_csv(rows, "results/v5_trade_ledger.csv")
-    write_md(rows, "results/v5_trade_ledger.md")
-    with open("results/v5_trade_ledger.csv") as f:
+    os.makedirs("results/spx", exist_ok=True)
+    write_csv(rows, "results/spx/v5_trade_ledger.csv")
+    write_md(rows, "results/spx/v5_trade_ledger.md")
+    with open("results/spx/v5_trade_ledger.csv") as f:
         n_csv = sum(1 for _ in f) - 1                  # minus header
     assert n_csv == len(rows), (n_csv, len(rows))
-    print(f"wrote results/v5_trade_ledger.csv ({n_csv} rows) and results/v5_trade_ledger.md")
+    print(f"wrote results/spx/v5_trade_ledger.csv ({n_csv} rows) and results/spx/v5_trade_ledger.md")
     print("\nSAMPLE (first 8 trades):")
     for r in rows[:8]:
         print("  " + _narrative(r))

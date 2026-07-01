@@ -313,8 +313,8 @@ if __name__ == "__main__":
         print(f"Running real SPX 1DTE condor backtest: {frm} -> {to}\n", flush=True)
         trades = run_real_backtest(frm, to)
         if trades:                               # save results so we never re-pull
-            os.makedirs("results", exist_ok=True)
-            out = f"results/backtest_{frm}_to_{to}.csv"
+            os.makedirs("results/spx", exist_ok=True)
+            out = f"results/spx/backtest_{frm}_to_{to}.csv"
             pd.DataFrame(trades).to_csv(out, index=False)
             print(f"\nSaved {len(trades)} trades -> {out}")
     else:

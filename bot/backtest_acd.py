@@ -248,11 +248,11 @@ if __name__ == "__main__":
     # --- REAL 3-yr run (needs the big pull complete + IVOL_API_KEY) ---
     import os
     if os.environ.get("RUN_REAL"):
-        os.makedirs("results", exist_ok=True)
+        os.makedirs("results/spx", exist_ok=True)
         slip = float(os.environ.get("SLIP", "0"))
         real, real_drp = run_acd_backtest(slippage_per_leg=slip)
         for name, trades in real.items():
             if trades:
-                pd.DataFrame(trades).to_csv(f"results/acd_{name}.csv", index=False)
-                print(f"saved results/acd_{name}.csv ({len(trades)} trades)")
+                pd.DataFrame(trades).to_csv(f"results/spx/acd_{name}.csv", index=False)
+                print(f"saved results/spx/acd_{name}.csv ({len(trades)} trades)")
         report_wrappers(real, real_drp)

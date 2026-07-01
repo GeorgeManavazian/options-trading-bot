@@ -83,8 +83,8 @@ for ax in (ax1, ax2):
     ax.grid(True, alpha=0.15)
 
 fig.tight_layout()
-os.makedirs("results", exist_ok=True)
-out = "results/v5_equity_curve.png"
+os.makedirs("results/spx", exist_ok=True)
+out = "results/spx/v5_equity_curve.png"
 fig.savefig(out, dpi=130)
 print(f"saved {out}")
 print(f"  ${ACCOUNT0:,.0f} -> ${final:,.0f}  (+{total_pct:.0f}%)  worst drawdown "

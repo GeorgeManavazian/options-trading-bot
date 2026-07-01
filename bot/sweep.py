@@ -119,7 +119,7 @@ if __name__ == "__main__":
     compare_by_year(results)
     # Save raw per-trade results for each variant (so we never recompute blind).
     import json
-    os.makedirs("results", exist_ok=True)
-    with open(f"results/sweep_{frm}_to_{to}.json", "w") as fh:
+    os.makedirs("results/spx", exist_ok=True)
+    with open(f"results/spx/sweep_{frm}_to_{to}.json", "w") as fh:
         json.dump(results, fh)
     print(f"\nSaved -> results/sweep_{frm}_to_{to}.json")

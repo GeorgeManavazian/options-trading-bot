@@ -161,8 +161,8 @@ if __name__ == "__main__":
         assert isinstance(trades, list)
         if trades:
             import pandas as pd
-            os.makedirs("results", exist_ok=True)
-            out = f"results/orb_{frm}_to_{to}.csv"
+            os.makedirs("results/spx", exist_ok=True)
+            out = f"results/spx/orb_{frm}_to_{to}.csv"
             pd.DataFrame(trades).to_csv(out, index=False)
             print(f"\nSaved {len(trades)} trades -> {out}")
         report_chains(trades)
