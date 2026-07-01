@@ -7,7 +7,7 @@ from collections import Counter
 from itertools import accumulate
 
 from acd_micro import build_day
-from acd_macro import DayEntry, macro_context, apply_macro, BREAKOUT, FADES
+from acd_macro import DayEntry, BREAKOUT, FADES
 from diag_full_signal import collect_signals, _edge
 from acd_cl import CL
 from load_cl_databento import (pull_cl_minutes, pull_cl_daily,
@@ -82,15 +82,19 @@ def report_pnl(trades, tick=0.01):
 
 
 def build_cl_history(min_csv, daily_csv):
-    """Ordered DayEntry stream for the full engine. Skips contract-roll days (their pivot
-    would come from a different contract) so a roll gap can't fabricate a signal."""
+    """Ordered DayEntry stream for the full engine. Roll days (instrument_id change) are kept
+    in the sequence so the NEXT day still gets its correct same-contract prior for the pivot,
+    but roll days emit NO signals (their own prior is cross-contract). This prevents a roll gap
+    from fabricating a signal AND from contaminating the following day's pivot."""
     hlc = cl_daily_hlc(daily_csv)
     rolls = cl_roll_days(daily_csv)
-    days = [d for d in sorted(hlc) if d not in rolls]
+    all_days = sorted(hlc)
     all_bars = bars_by_et_day(_read_cache(min_csv))     # read + transform the minute CSV ONCE
     hist = []
-    for idx, D in enumerate(days):
-        prior = hlc[days[idx - 1]] if idx > 0 else hlc[D]   # first day: use itself as prior (no warm-up)
+    for pos, D in enumerate(all_days):
+        if D in rolls:
+            continue                                    # skip signal emission; day still counts as a prior for D+1
+        prior = hlc[all_days[pos - 1]] if pos > 0 else hlc[D]   # correct same-contract prior (the roll day itself)
         bars = all_bars.get(D, [])
         if not bars:
             continue
@@ -129,16 +133,28 @@ if __name__ == "__main__":
     import pandas as pd, tempfile
     from load_cl_databento import _write_cache
     dd = tempfile.mkdtemp()
-    didx = pd.to_datetime(["2024-01-10","2024-01-11","2024-01-12"], utc=True)
-    dfd = pd.DataFrame({"open":[70,71,72],"high":[75.,76.,77.],"low":[69.,70.,71.],
-                        "close":[74.,75.,76.],"instrument_id":[1,1,2]}, index=didx); dfd.index.name="ts_event"
-    midx = pd.to_datetime(["2024-01-10 14:00","2024-01-10 14:20","2024-01-11 14:00","2024-01-11 14:20"], utc=True)
-    dfm = pd.DataFrame({"open":[70]*4,"high":[70]*4,"low":[70]*4,"close":[74.,74.5,75.,75.5],
-                        "instrument_id":[1,1,1,1]}, index=midx); dfm.index.name="ts_event"
+    # 2024-01-12 is the roll (instrument_id 1->2); 2024-01-15 continues id=2 (NOT a roll)
+    didx = pd.to_datetime(["2024-01-10","2024-01-11","2024-01-12","2024-01-15"], utc=True)
+    dfd = pd.DataFrame({"open":[70,71,72,73],"high":[75.,76.,77.,78.],"low":[69.,70.,71.,72.],
+                        "close":[74.,75.,76.,77.],"instrument_id":[1,1,2,2]}, index=didx); dfd.index.name="ts_event"
+    # 14:00 UTC = 09:00 EST; add bars for 01-15 so it gets processed
+    midx = pd.to_datetime(["2024-01-10 14:00","2024-01-10 14:20","2024-01-11 14:00","2024-01-11 14:20",
+                           "2024-01-15 14:00","2024-01-15 14:20"], utc=True)
+    dfm = pd.DataFrame({"open":[70]*6,"high":[70]*6,"low":[70]*6,"close":[74.,74.5,75.,75.5,76.,76.5],
+                        "instrument_id":[1,1,1,1,2,2]}, index=midx); dfm.index.name="ts_event"
     dcsv=os.path.join(dd,"d.csv"); mcsv=os.path.join(dd,"m.csv"); _write_cache(dfd,dcsv); _write_cache(dfm,mcsv)
     h = build_cl_history(mcsv, dcsv)
+    # (a) roll day must emit no signals
     assert all(e.date != "2024-01-12" for e in h), "roll day excluded"
-    print(f"Task 4 self-test OK: build_cl_history skipped roll day, {len(h)} entries")
+    # (b) the day AFTER the roll must use the roll day (2024-01-12) as its prior, NOT 2024-01-11
+    e15 = next((e for e in h if e.date == "2024-01-15"), None)
+    assert e15 is not None, "2024-01-15 missing from history"
+    hlc12 = (77., 71., 76.)  # 2024-01-12 HLC (high, low, close) from dfd above
+    bars15 = bars_by_et_day(dfm)["2024-01-15"]
+    dr_expected = build_day("2024-01-15", bars15, hlc12, CL)
+    assert e15.day_result.or_high == dr_expected.or_high and e15.day_result.or_low == dr_expected.or_low, \
+        f"01-15 OR mismatch: got [{e15.day_result.or_low},{e15.day_result.or_high}] want [{dr_expected.or_low},{dr_expected.or_high}]"
+    print(f"Task 4 self-test OK: build_cl_history skipped roll day, {len(h)} entries, 01-15 prior=roll-day HLC")
 
     # --- Task 5: P&L + stats on hand-built trades ---
     fake = [

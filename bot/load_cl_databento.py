@@ -58,9 +58,12 @@ def roll_days_from_df(df):
 def _client():
     key = ""
     env = os.path.join(os.path.dirname(__file__), "..", ".env")
-    for line in open(env):
-        if line.startswith("DATABENTO_API_KEY"):
-            key = line.strip().split("=", 1)[1].strip()
+    with open(env) as f:
+        for line in f:
+            if line.startswith("DATABENTO_API_KEY"):
+                key = line.strip().split("=", 1)[1].strip()
+    if not key:
+        raise RuntimeError("DATABENTO_API_KEY not found in .env")
     import databento as db
     return db.Historical(key)
 
