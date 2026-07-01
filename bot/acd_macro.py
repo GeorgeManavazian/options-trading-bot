@@ -106,10 +106,9 @@ def pivot_ma_regime(history, i, eps=1e-6):
     for n in (14, 30, 50):
         cur, prev = _sma(pivots, n, i), _sma(pivots, n, i - 1)
         if cur is None or prev is None:
-            slopes.append(0)                            # insufficient data -> treat as flat
-        else:
-            d = cur - prev
-            slopes.append(1 if d > eps else (-1 if d < -eps else 0))
+            return "neutral"                            # insufficient data -> stand aside
+        d = cur - prev
+        slopes.append(1 if d > eps else (-1 if d < -eps else 0))
     if all(s == 1 for s in slopes):
         return "bullish"
     if all(s == -1 for s in slopes):
@@ -210,21 +209,24 @@ def macro_context(i, history):
 
 def apply_macro(setups, ctx):
     """Drop micro setups that fight the regime/number line (chop filter + regime gate); boost
-    conviction on macro confluence. Fades are kept (chop is where mean-reversion belongs)."""
-    td = _TREND_DIR.get(ctx.trend_state) or _TREND_DIR.get(ctx.regime)
+    conviction on macro confluence. Fades are always kept (chop is where mean-reversion belongs)."""
+    tdir = _TREND_DIR.get(ctx.trend_state)              # number-line direction (or None)
+    rdir = _TREND_DIR.get(ctx.regime)                   # pivot-MA-regime direction (or None)
+    gate_dir = tdir or rdir                             # number line takes precedence for the gate
+    drop_breakouts = ctx.trend_state in ("chop", "system_failure") or ctx.regime == "confused"
     out = []
     for s in setups:
-        if (ctx.trend_state == "chop" or ctx.regime == "confused") and s.name in BREAKOUT:
-            continue                                    # chop filter
-        if td and s.name in BREAKOUT and s.direction != td:
+        if drop_breakouts and s.name in BREAKOUT:
+            continue                                    # chop / confused / failed-macro -> no breakouts
+        if gate_dir and s.name in BREAKOUT and s.direction != gate_dir:
             continue                                    # regime gate (breakouts only)
-        agrees = 0
-        if td and s.direction == td:
-            agrees += 1
-        if (ctx.momentum == 1 and s.direction == "long") or (ctx.momentum == -1 and s.direction == "short"):
-            agrees += 1
-        if (ctx.plus_minus == 1 and s.direction == "long") or (ctx.plus_minus == -1 and s.direction == "short"):
-            agrees += 1
+        # confluence: count trend, PMA regime, momentum, plus/minus separately (spec A6)
+        agrees = sum([
+            bool(tdir and s.direction == tdir),
+            bool(rdir and s.direction == rdir),
+            (ctx.momentum == 1 and s.direction == "long") or (ctx.momentum == -1 and s.direction == "short"),
+            (ctx.plus_minus == 1 and s.direction == "long") or (ctx.plus_minus == -1 and s.direction == "short"),
+        ])
         out.append(Setup(s.name, s.direction, s.entry_time, s.entry_price, s.stop,
                          min(5, s.conviction + agrees), s.horizon, dict(s.refs)))
     return out
@@ -265,14 +267,21 @@ if __name__ == "__main__":
     ctx_up = MacroContext("d", 2, 12, "trend_up", "bullish", 1, 1)
     res = apply_macro([mk("a_held", "long"), mk("a_held", "short")], ctx_up)
     assert len(res) == 1 and res[0].direction == "long", res
-    assert res[0].conviction == 4, res[0].conviction         # base 1 + trend + momentum + plus_minus
+    assert res[0].conviction == 5, res[0].conviction         # base 1 + trend + regime + momentum + plus_minus
     print("A6 OK: regime gate drops counter-trend; confluence boosts conviction")
+
+    # system_failure (failed macro trend) also drops breakouts, keeps fades
+    ctx_sf = MacroContext("d", 0, 5, "system_failure", "neutral", 0, 0)
+    assert _names(apply_macro([mk("a_held", "long"), mk("failed_a", "short")], ctx_sf)) == ["failed_a"]
+    print("A6 OK: system_failure drops breakouts")
 
     # --- A4/A5: bullish PMA regime + momentum on a rising pivot series ---
     rising = [_score_day(f"r{k}", None, 5000 + k) for k in range(51)]  # pivots 5000..5050 rising
     assert pivot_ma_regime(rising, 50) == "bullish", pivot_ma_regime(rising, 50)
     assert momentum(rising, 50) == 1
-    print("A4/A5 OK: bullish PMA regime + positive momentum")
+    # warm-up: neutral (stand aside) until the 50-day MA exists, NOT 'confused'
+    assert pivot_ma_regime(rising, 20) == "neutral", pivot_ma_regime(rising, 20)
+    print("A4/A5 OK: bullish PMA regime + momentum; warm-up = neutral")
 
     # --- A3: plus day ---
     dr_pm = DayResult("pm", 4990, 4980, (4995.0, 5005.0), "below", [], [])
@@ -294,7 +303,12 @@ if __name__ == "__main__":
     rev3 = [_aday("d0", "A_up", 5018), _aday("d1", "A_up", 5020), _aday("d2", "A_up", 5025),
             _aday("d3", "A_down", 5015)]
     assert not any(s.name == "reversal_trade" for s in macro_context(3, rev3).macro_setups)
-    print("B1 OK: reversal trade (and 3-consecutive-A invalidation)")
+    # reversal LONG: two A_down then a higher A_up today
+    revL = [_aday("e1", "A_down", 4980), _neut("e2"), _aday("e3", "A_down", 4975),
+            _aday("e4", "A_up", 4990)]                       # 4990 > max(4980,4975) -> long
+    assert any(s.name == "reversal_trade" and s.direction == "long"
+               for s in macro_context(3, revL).macro_setups), "reversal long"
+    print("B1 OK: reversal trade (short + long + 3-consecutive-A invalidation)")
 
     # --- B3: bearish sushi roll ---
     def _od(date, h, l, c):
