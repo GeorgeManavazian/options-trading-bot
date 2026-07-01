@@ -11,10 +11,12 @@
 
 **Next candidates: (1) WALK-FORWARD / out-of-sample the V5 config (kills the best-of-9 overfitting flag — the owed next step before any trust); (2) the queued "condor on ACD chop days" idea; (3) run instrument-agnostic on a trending market.** Below = Session 9 (full ACD bot ①②③④) context, still valid.
 
+**⚠️ HONEST SCOPE — what "the full ACD bot works" really means (do NOT over-claim):** All engine components (①②③④) are BUILT and the full *signal* was validated on SPX (checkpoint `diag_full_signal.py`, all families). But **no single backtest ever deployed the total strategy as one options bot.** We found TWO separate SPX options edges, each developed on only the half that showed a signal edge: (a) **multiday MACRO reversals/sushi** (`backtest_acd_full.py` — line 52 hard-filters to `horizon=="multiday"`, +476%); (b) **intraday FADES** (`backtest_acd_fades.py` → refined into **V5**). **V5 is ONLY the fade half — not "the ACD bot."** The **BREAKOUT half was tested at the signal level (≈flat on SPX) and NEVER turned into an options backtest** — so breakout profitability is UNTESTED anywhere. Accurate phrasing: *"two subsets of the strategy each cleared the bar on SPX; the breakout third is untested for profitability."* This is the whole rationale for the crude-oil project (below).
+
 ---
 
 ## (Session 9 phase brief — full ACD bot built)
-**THE FULL MARK FISHER ACD BOT IS BUILT (①②③④) and produced a REAL, COST-ROBUST-but-not-yet-deployable options edge.** This is the live workstream. (Earlier bots are shelved history: 1DTE condor LOST; ORB found an edge but savage drawdown; "momentum-ACD" was a *fragment* we wrongly called falsified — the FULL method is what we then built.)
+**THE FULL MARK FISHER ACD BOT IS BUILT (①②③④); its mean-reversion halves produced real, cost-robust-but-not-yet-deployable options edges (macro reversals + fades). The breakout half is untested for profitability — see the ⚠️ HONEST SCOPE note above.** This is the live workstream. (Earlier bots are shelved history: 1DTE condor LOST; ORB found an edge but savage drawdown; "momentum-ACD" was a *fragment* we wrongly called falsified — the FULL method is what we then built.)
 
 **The full ACD bot (all on `main`, on GitHub, all self-tests green):**
 - `bot/acd_micro.py` — ① intraday engine: opening range, A/B/C/D, hold-clock, all **9 setups** (breakouts + fades/reversals). Instrument-agnostic via `InstrumentSpec`. Emits `DayResult{events, setups}`.
