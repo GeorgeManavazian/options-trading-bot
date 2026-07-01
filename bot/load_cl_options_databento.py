@@ -134,11 +134,22 @@ def pull_legs_batch(symbols, date):
 
 def leg_bars(symbol, date):
     """Read the cached leg CSV → option_bbo_by_et → DataFrame[time, bid, ask].
-    Returns an empty DataFrame if the cache file does not exist."""
+    Returns an empty DataFrame if the cache file is missing/empty/unreadable.
+
+    Reads robustly: pandas' read_csv occasionally parses the tz-aware ts_event column to a
+    plain object Index (not DatetimeIndex), so we force a tz-aware UTC index explicitly."""
     path = _leg_path(symbol, date)
+    empty = pd.DataFrame(columns=["time", "bid", "ask"])
     if not os.path.exists(path):
-        return pd.DataFrame(columns=["time", "bid", "ask"])
-    return option_bbo_by_et(_read_cache(path))
+        return empty
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return empty
+    if df.empty or "ts_event" not in df.columns:
+        return empty
+    df = df.set_index(pd.to_datetime(df["ts_event"], utc=True, errors="coerce"))
+    return option_bbo_by_et(df)
 
 
 if __name__ == "__main__":
