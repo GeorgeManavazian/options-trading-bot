@@ -67,6 +67,17 @@ def fetch_option_minutes(symbol, trade_date, exp_date, strike, opt_type,
     return normalize_minutes(raw)
 
 
+def load_cached_minutes(symbol, trade_date, exp_date, strike, opt_type):
+    """Cache-only reader: normalized minute bars if already pulled, else None.
+    Filename must match fetch_option_minutes exactly. No network -> the offline
+    backtest marks fades through this."""
+    tag = f"{symbol}_{trade_date}_{exp_date}_{int(strike)}_{opt_type[0].upper()}_min.csv"
+    cache_path = os.path.join(CACHE_DIR, tag)
+    if os.path.exists(cache_path):
+        return normalize_minutes(pd.read_csv(cache_path))
+    return None
+
+
 def underlying_path(symbol, trade_date, exp_date, anchor_strike):
     """Read the underlying spot off a near-ATM option's bars -> [(t, spot)]."""
     df = fetch_option_minutes(symbol, trade_date, exp_date, anchor_strike, "put")
@@ -172,3 +183,6 @@ if __name__ == "__main__":
     assert strikes == [4980.0, 4990.0, 5000.0, 5010.0, 5020.0], strikes
     assert anchor == 5003.0, anchor
     print("Task 7b OK: parse_0dte_chain returns strikes + anchor spot")
+
+    assert load_cached_minutes("SPX", "1900-01-01", "1900-01-01", 5000, "put") is None
+    print("Task 7c OK: load_cached_minutes returns None for an un-cached contract")
