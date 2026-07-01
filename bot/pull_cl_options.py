@@ -13,7 +13,7 @@ from backtest_cl_options import collect_same_day, START, END
 from backtest_acd_cl import build_cl_history
 
 PROGRESS = os.path.join(CACHE_DIR, "CL_options_pull.progress")
-WORKERS = 4   # lowered from 8 to avoid Databento 504s on concurrent definition pulls
+WORKERS = 10  # definitions all cached now; small leg pulls handle high concurrency
 _lock = threading.Lock()
 
 
