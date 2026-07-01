@@ -32,7 +32,7 @@
   "profit_factor": 2.208187134502924,
   "expectancy": 0.4132,
   "inputs": {
-    "total_trades": 2552,
+    "total_trades": 2554,
     "win_rate": 64.0,
     "avg_win_pct": 1.18,
     "avg_loss_pct": 0.95,
