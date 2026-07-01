@@ -10,7 +10,8 @@ from acd_macro import DayEntry, macro_context, apply_macro, BREAKOUT, FADES
 from diag_full_signal import collect_signals, _edge
 from acd_cl import CL
 from load_cl_databento import (pull_cl_minutes, pull_cl_daily,
-                               cl_day_path, cl_daily_hlc, cl_roll_days)
+                               cl_day_path, cl_daily_hlc, cl_roll_days,
+                               bars_by_et_day, _read_cache)
 
 START, END = "2010-06-06", "2026-06-29"
 
@@ -21,14 +22,15 @@ def build_cl_history(min_csv, daily_csv):
     hlc = cl_daily_hlc(daily_csv)
     rolls = cl_roll_days(daily_csv)
     days = [d for d in sorted(hlc) if d not in rolls]
+    all_bars = bars_by_et_day(_read_cache(min_csv))     # read + transform the minute CSV ONCE
     hist = []
     for idx, D in enumerate(days):
-        prior = hlc[days[idx - 1]] if idx > 0 else hlc[D]
-        path = cl_day_path(D, min_csv)
-        if not path:
+        prior = hlc[days[idx - 1]] if idx > 0 else hlc[D]   # first day: use itself as prior (no warm-up)
+        bars = all_bars.get(D, [])
+        if not bars:
             continue
         try:
-            dr = build_day(D, path, prior, CL)
+            dr = build_day(D, bars, prior, CL)
         except Exception:
             continue
         hist.append(DayEntry(D, hlc[D], dr))
