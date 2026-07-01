@@ -17,6 +17,8 @@ def option_bbo_by_et(df, session_open="09:00", session_close="16:00"):
     et = df.tz_convert(ET) if df.index.tz is not None else df.tz_localize("UTC").tz_convert(ET)
     rows = []
     for ts, bid, ask in zip(et.index, et["bid_px_00"], et["ask_px_00"]):
+        if pd.isna(ts):          # bbo-1m overnight bars may have NaT ts_event — skip
+            continue
         hhmm = ts.strftime("%H:%M")
         if session_open <= hhmm <= session_close and pd.notna(bid) and pd.notna(ask) \
                 and bid > 0 and ask > 0:
@@ -41,8 +43,10 @@ def definition_snapshot(year, month):
     df = df[df["instrument_class"].isin(["C","P"])].copy()
     df["exp"] = df["expiration"].astype(str).str[:10]
     # first available snapshot day only (definitions repeat daily; one snapshot is enough)
-    first_day = df.index.min()
-    df = df[df.index == first_day]
+    # Use date-level comparison: df.index is nanosecond-precision ts_recv, so we normalize
+    # to day before filtering (otherwise df.index == first_ts returns only 1 row).
+    first_day = df.index.normalize().min()
+    df = df[df.index.normalize() == first_day]
     out = df[["raw_symbol","instrument_class","strike_price","exp"]].reset_index(drop=True)
     os.makedirs(CACHE_DIR, exist_ok=True)
     out.to_csv(path, index=False)
@@ -86,6 +90,39 @@ def resolve_legs(date, direction, entry_price, width=2.0, snapshot=None):
             "width": abs(short_strike - long_strike), "expiry": exp, "date": date}
 
 
+# ---------------------------------------------------------------------------
+# Task 3: pull + cache + read one option leg's bbo-1m NBBO bars
+# ---------------------------------------------------------------------------
+
+def _leg_path(symbol, date):
+    safe = symbol.replace(" ", "_")
+    return os.path.join(CACHE_DIR, f"CLopt_{safe}_{date}.csv")
+
+
+def pull_leg(symbol, date):
+    """Pull bbo-1m for one LO option raw_symbol over [date, date+1), cache to CSV, return path.
+    Skips the API call if the cache file already exists."""
+    path = _leg_path(symbol, date)
+    if os.path.exists(path):
+        return path
+    d = pd.Timestamp(date) + pd.Timedelta(days=1)
+    end = d.strftime("%Y-%m-%d")
+    data = _client().timeseries.get_range(
+        dataset="GLBX.MDP3", symbols=[symbol], stype_in="raw_symbol",
+        schema="bbo-1m", start=date, end=end)
+    _write_cache(data.to_df(), path)
+    return path
+
+
+def leg_bars(symbol, date):
+    """Read the cached leg CSV → option_bbo_by_et → DataFrame[time, bid, ask].
+    Returns an empty DataFrame if the cache file does not exist."""
+    path = _leg_path(symbol, date)
+    if not os.path.exists(path):
+        return pd.DataFrame(columns=["time", "bid", "ask"])
+    return option_bbo_by_et(_read_cache(path))
+
+
 if __name__ == "__main__":
     import pandas as pd
 
@@ -93,6 +130,7 @@ if __name__ == "__main__":
     est = pd.DataFrame({"bid_px_00":[2.01, 2.03, 9.9], "ask_px_00":[2.05, 2.06, 9.9]},
                        index=pd.to_datetime(["2024-01-10 14:00","2024-01-10 14:05","2024-01-10 21:30"], utc=True))
     est.index.name = "ts_event"
+    raw = est                                           # bbo-1m shaped fixture reused by Task 3
     out = option_bbo_by_et(est, "09:00", "16:00")
     assert list(out.columns) == ["time","bid","ask"], out.columns
     assert out["time"].tolist() == ["09:00","09:05"], out["time"].tolist()   # 16:30 dropped, sorted
@@ -128,4 +166,13 @@ if __name__ == "__main__":
     assert sg["opt_type"]=="put" and sg["long_strike"]==75.0 and sg["short_strike"]==73.0, sg  # 75, -2 ->73
     assert resolve_legs("2024-12-31","long",76.0,snapshot=snap) is None, "no future expiry -> None"
     print("Task 2 OK: resolve_legs (nearest expiry, ATM long, width short, dir-aware)")
+
+    # --- Task 3: leg cache round-trip on a mock bbo df (offline) ---
+    import tempfile as _tf
+    _d = _tf.mkdtemp()
+    _p = os.path.join(_d, "CLopt_TEST_2024-06-03.csv")
+    _write_cache(raw, _p)                       # 'raw' from Task 1 (bbo-1m shaped)
+    _bars = option_bbo_by_et(_read_cache(_p))
+    assert list(_bars.columns) == ["time","bid","ask"] and len(_bars) >= 2, _bars
+    print("Task 3 OK: leg cache round-trip")
     print("ALL load_cl_options_databento self-tests passed")
