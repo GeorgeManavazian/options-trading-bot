@@ -82,6 +82,30 @@ def apply_variant(trades, v):
             for t, p, w in zip(picked, pnls, ws)]
 
 
+def weighted_returns(rows, slip=0.0):
+    """[(date, weighted return)] with an optional per-leg slippage haircut."""
+    out = []
+    for r in rows:
+        pnl = r["pnl"] - slip * r["nlegs"] * 2 * 100
+        out.append((r["date"], pnl / r["max_loss"] * r["weight"]))
+    return out
+
+
+def score(pairs):
+    rets = [w for _, w in pairs]
+    n, wr, total, mdd, ra = _stats(rets)          # mdd positive; ra = total/mdd
+    sd = statistics.pstdev(rets) if len(rets) > 1 else 0.0
+    sharpe = statistics.mean(rets) / sd if sd > 0 else 0.0
+    return {"n": n, "win": wr, "total": total, "mdd": mdd, "risk_adj": ra, "sharpe": sharpe}
+
+
+def per_year(pairs):
+    yr = {}
+    for date, w in pairs:
+        yr[date[:4]] = yr.get(date[:4], 0.0) + w
+    return yr
+
+
 if __name__ == "__main__":
     trades = collect_fade_trades()
     assert len(trades) > 250, len(trades)
@@ -117,3 +141,14 @@ if __name__ == "__main__":
     m = sum(raw) / len(raw)
     assert all(abs(r[i]["weight"] - raw[i] / m) < 1e-9 for i in range(5)), [x["weight"] for x in r]
     print("OK apply_variant: throttle sizing")
+
+    known = [("2024-01-01", 1.0), ("2024-06-01", -1.0), ("2025-01-01", 1.0)]
+    s = score(known)                              # cum 1,0,1 -> mdd 1.0 ; total 1.0 ; ra 1.0
+    assert s["n"] == 3 and abs(s["total"] - 1.0) < 1e-9
+    assert abs(s["mdd"] - 1.0) < 1e-9 and abs(s["risk_adj"] - 1.0) < 1e-9, s
+    yr = per_year(known)
+    assert abs(yr["2024"] - 0.0) < 1e-9 and abs(yr["2025"] - 1.0) < 1e-9, yr
+    wr_rows = [{"date": "2024-01-01", "weight": 1.0, "pnl": 100, "nlegs": 2, "max_loss": 100.0}]
+    assert abs(weighted_returns(wr_rows, 0.0)[0][1] - 1.0) < 1e-9
+    assert weighted_returns(wr_rows, 0.10)[0][1] < 1.0     # slippage haircut lowers the return
+    print("OK score / per_year / weighted_returns")
