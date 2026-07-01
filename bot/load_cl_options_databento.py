@@ -21,28 +21,32 @@ def option_bbo_by_et(df, session_open="09:00", session_close="16:00"):
         if session_open <= hhmm <= session_close and pd.notna(bid) and pd.notna(ask) \
                 and bid > 0 and ask > 0:
             rows.append((hhmm, float(bid), float(ask)))
+    rows.sort()
     return pd.DataFrame(rows, columns=["time","bid","ask"])
 
 
 if __name__ == "__main__":
     import pandas as pd
 
-    idx = pd.to_datetime([
-        "2024-01-10 14:00:00",  # 09:00 EST
-        "2024-01-10 14:05:00",  # 09:05 EST
-        "2024-01-10 21:30:00",  # 16:30 EST -> outside window
-        "2024-03-11 13:00:00",  # 09:00 EDT (DST)
-    ], utc=True)
-    raw = pd.DataFrame({"bid_px_00":[2.01, 2.03, 9.9, 1.50],
-                        "ask_px_00":[2.05, 2.06, 9.9, 1.55]}, index=idx)
-    raw.index.name = "ts_event"
-    out = option_bbo_by_et(raw, "09:00", "16:00")
+    # EST day: 14:00 UTC -> 09:00 EST, 14:05 -> 09:05, 21:30 -> 16:30 (dropped, outside window)
+    est = pd.DataFrame({"bid_px_00":[2.01, 2.03, 9.9], "ask_px_00":[2.05, 2.06, 9.9]},
+                       index=pd.to_datetime(["2024-01-10 14:00","2024-01-10 14:05","2024-01-10 21:30"], utc=True))
+    est.index.name = "ts_event"
+    out = option_bbo_by_et(est, "09:00", "16:00")
     assert list(out.columns) == ["time","bid","ask"], out.columns
-    assert out["time"].tolist() == ["09:00","09:05","09:00"], out["time"].tolist()  # 16:30 dropped
+    assert out["time"].tolist() == ["09:00","09:05"], out["time"].tolist()   # 16:30 dropped, sorted
     assert abs(out.iloc[0]["ask"] - 2.05) < 1e-9
+
+    # EDT day (DST): 13:00 UTC -> 09:00 EDT (would be 08:00 EST -> dropped, so this proves DST offset)
+    edt = pd.DataFrame({"bid_px_00":[1.50], "ask_px_00":[1.55]},
+                       index=pd.to_datetime(["2024-03-11 13:00"], utc=True))
+    edt.index.name = "ts_event"
+    out_edt = option_bbo_by_et(edt, "09:00", "16:00")
+    assert out_edt["time"].tolist() == ["09:00"], out_edt["time"].tolist()
+
     # a NaN/zero bid row is dropped
-    raw2 = raw.copy(); raw2.loc[raw2.index[0], "bid_px_00"] = 0.0
-    out2 = option_bbo_by_et(raw2, "09:00", "16:00")
-    assert out2["time"].tolist() == ["09:05","09:00"], out2["time"].tolist()
-    print("Task 1 OK: option_bbo_by_et (ET window, DST, drop bad quotes)")
+    bad = est.copy(); bad.loc[bad.index[0], "bid_px_00"] = 0.0
+    out2 = option_bbo_by_et(bad, "09:00", "16:00")
+    assert out2["time"].tolist() == ["09:05"], out2["time"].tolist()
+    print("Task 1 OK: option_bbo_by_et (ET window, DST, sorted, drop bad quotes)")
     print("ALL load_cl_options_databento self-tests passed")
