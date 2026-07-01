@@ -114,6 +114,24 @@ def pull_leg(symbol, date):
     return path
 
 
+def pull_legs_batch(symbols, date):
+    """Pull bbo-1m for MULTIPLE option raw_symbols in ONE request, writing each to its own
+    per-symbol cache file (CLopt_<safe>_<date>.csv). Only requests symbols not already cached.
+    A symbol with no data that day gets an empty cache file (terminal — not re-pulled).
+    Raises on API/network error so the caller can retry."""
+    need = [s for s in symbols if not os.path.exists(_leg_path(s, date))]
+    if not need:
+        return
+    d1 = (pd.Timestamp(date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    df = _client().timeseries.get_range(
+        dataset="GLBX.MDP3", symbols=need, stype_in="raw_symbol",
+        schema="bbo-1m", start=date, end=d1).to_df()
+    have_symbol_col = ("symbol" in df.columns) and (not df.empty)
+    for sym in need:
+        sub = df[df["symbol"] == sym] if have_symbol_col else df.iloc[0:0]
+        _write_cache(sub, _leg_path(sym, date))
+
+
 def leg_bars(symbol, date):
     """Read the cached leg CSV → option_bbo_by_et → DataFrame[time, bid, ask].
     Returns an empty DataFrame if the cache file does not exist."""
