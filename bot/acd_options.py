@@ -8,6 +8,7 @@
 from dataclasses import dataclass
 
 from acd_wrappers import build_long_option, build_debit_spread, build_credit_spread
+from sizing import position_size
 
 FADES = {"failed_a", "failed_a_pivot", "failed_c"}          # mean-reversion (strongest edge)
 MACRO = {"reversal_trade", "trt", "sushi"}                  # multi-day edge
@@ -37,9 +38,12 @@ def horizon_of(setup):
 
 
 def dte_target(setup, policy=DEFAULT_POLICY):
-    return {"intraday": policy.dte_intraday,
-            "overnight": policy.dte_overnight,
-            "multiday": policy.dte_multiday}[horizon_of(setup)]
+    h = horizon_of(setup)
+    table = {"intraday": policy.dte_intraday, "overnight": policy.dte_overnight,
+             "multiday": policy.dte_multiday}
+    if h not in table:
+        raise ValueError(f"unknown horizon {h!r} for setup {setup.name!r}")
+    return table[h]
 
 
 def choose_structure(setup, policy=DEFAULT_POLICY):
@@ -62,6 +66,8 @@ _BUILDERS = {
 def express(setup, puts, calls, spot, expiration, policy=DEFAULT_POLICY):
     """Map a Setup to an option Position (uniform acd_wrappers dict + overlay metadata)."""
     structure = choose_structure(setup, policy)
+    if structure not in _BUILDERS:
+        raise ValueError(f"unknown structure {structure!r} (policy misconfigured)")
     sig = {"direction": setup.direction}
     pos = _BUILDERS[structure](sig, puts, calls, spot, expiration, policy)
     pos.update(setup=setup.name, conviction=setup.conviction,
@@ -72,7 +78,6 @@ def express(setup, puts, calls, spot, expiration, policy=DEFAULT_POLICY):
 def size_position(max_loss, account, risk_pct, conviction, max_conviction=5):
     """Contracts to trade; the risk budget scales with conviction (Fisher: size up on confluence).
     Returns (contracts, pct_of_account_at_risk, note) from sizing.position_size."""
-    from sizing import position_size
     frac = risk_pct * (0.4 + 0.6 * conviction / max_conviction)   # 40%..100% of the risk cap
     return position_size(max_loss, account, frac)
 
