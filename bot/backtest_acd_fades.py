@@ -3,9 +3,7 @@
 # intraday time (real NBBO bars); settle at each option's expiry via the cached
 # underlying close. Reports per cell + a slippage sweep + a 0DTE hold-vs-stop
 # comparison. Offline on cache. Run: .venv/bin/python bot/backtest_acd_fades.py
-import statistics
 from collections import Counter
-from itertools import accumulate
 
 from acd_fade_signals import collect_fades, grid_cells
 from acd_fade_pricing import spread_entry, expire_value, close_value, exit_target_stop
