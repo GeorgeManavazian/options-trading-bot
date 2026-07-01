@@ -13,7 +13,7 @@ from backtest_cl_options import collect_same_day, START, END
 from backtest_acd_cl import build_cl_history
 
 PROGRESS = os.path.join(CACHE_DIR, "CL_options_pull.progress")
-WORKERS = 8
+WORKERS = 4   # lowered from 8 to avoid Databento 504s on concurrent definition pulls
 _lock = threading.Lock()
 
 
@@ -29,11 +29,11 @@ def _record(key):
 
 def _pull_one(i, s):
     key = f"{s.date}:{s.name}:{s.direction}:{i}"
-    lg = resolve_legs(s.date, s.direction, s.entry_price)
-    if lg is None:
-        _record(key)
-        return "none"
     try:
+        lg = resolve_legs(s.date, s.direction, s.entry_price)   # may re-pull a missing month def
+        if lg is None:
+            _record(key)
+            return "none"
         pull_legs_batch([lg["long_sym"], lg["short_sym"]], s.date)
     except Exception as e:
         print(f"  WARN {s.date} {s.name}: {type(e).__name__} {str(e)[:80]} (will retry)", flush=True)
