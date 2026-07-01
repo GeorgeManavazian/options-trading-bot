@@ -26,14 +26,19 @@ def main():
         if key in done:
             continue
         lg = resolve_legs(s.date, s.direction, s.entry_price)
-        if lg is not None:
+        if lg is None:
+            # genuinely no resolvable legs -> terminal, record so we don't re-resolve every run
+            with open(PROGRESS, "a") as f:
+                f.write(key + "\n")
+        else:
             try:
                 pull_leg(lg["long_sym"], s.date)
                 pull_leg(lg["short_sym"], s.date)
             except Exception as e:
-                print(f"  WARN {s.date} {s.name}: {type(e).__name__} {str(e)[:80]}", flush=True)
-        with open(PROGRESS, "a") as f:
-            f.write(key + "\n")
+                print(f"  WARN {s.date} {s.name}: {type(e).__name__} {str(e)[:80]} (will retry)", flush=True)
+                continue                     # do NOT record -> retried on next run
+            with open(PROGRESS, "a") as f:
+                f.write(key + "\n")          # record only on successful pull
         if i % 100 == 0:
             print(f"  {i}/{len(sigs)} done", flush=True)
     print("DONE.", flush=True)
