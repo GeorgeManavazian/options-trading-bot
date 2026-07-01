@@ -4,7 +4,6 @@
 #
 # Auth: DATABENTO_API_KEY in .env.  Run: .venv/bin/python bot/load_cl_databento.py
 import os
-import glob
 
 import pandas as pd
 
@@ -29,8 +28,13 @@ def bars_by_et_day(df, session_open="09:00", session_close="16:00"):
 
 
 def daily_hlc_from_df(df):
-    """Daily Databento df -> {date: (High, Low, Close)} (ET calendar date)."""
-    # For daily data, preserve the date from the index (midnight UTC -> ET conversion shifts dates)
+    """Daily Databento df -> {date: (High, Low, Close)} (ET calendar date).
+
+    Assumes the daily df is midnight-UTC indexed (Databento timestamps daily bars at
+    00:00:00 UTC of the trading date).  We do NOT tz_convert to ET here because
+    converting midnight UTC -> ET would shift every date back by one day, producing
+    2024-06-02 instead of 2024-06-03, etc.
+    """
     out = {}
     for ts, hi, lo, cl in zip(df.index, df["high"], df["low"], df["close"]):
         out[ts.strftime("%Y-%m-%d")] = (float(hi), float(lo), float(cl))
@@ -47,9 +51,64 @@ def roll_days_from_df(df):
     return {ordered[k] for k in range(1, len(ordered)) if days[ordered[k]] != days[ordered[k-1]]}
 
 
-if __name__ == "__main__":
-    import pandas as pd
+# ---------------------------------------------------------------------------
+# Task 2: Databento API pull + CSV cache + offline reader functions
+# ---------------------------------------------------------------------------
 
+def _client():
+    key = ""
+    env = os.path.join(os.path.dirname(__file__), "..", ".env")
+    for line in open(env):
+        if line.startswith("DATABENTO_API_KEY"):
+            key = line.strip().split("=", 1)[1].strip()
+    import databento as db
+    return db.Historical(key)
+
+
+def _write_cache(df, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    df.to_csv(path)                        # ts_event index (UTC ISO) + columns
+
+
+def _read_cache(path):
+    df = pd.read_csv(path, index_col="ts_event", parse_dates=["ts_event"])
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+    return df
+
+
+def _pull(schema, start, end, tag):
+    path = os.path.join(CACHE_DIR, f"CL_{tag}_{start}_{end}.csv")
+    if os.path.exists(path):
+        return path
+    data = _client().timeseries.get_range(
+        dataset="GLBX.MDP3", symbols=["CL.c.0"], stype_in="continuous",
+        schema=schema, start=start, end=end)
+    _write_cache(data.to_df(), path)
+    return path
+
+
+def pull_cl_minutes(start, end):
+    return _pull("ohlcv-1m", start, end, "1m")
+
+
+def pull_cl_daily(start, end):
+    return _pull("ohlcv-1d", start, end, "1d")
+
+
+def cl_day_path(date, min_csv):
+    return bars_by_et_day(_read_cache(min_csv)).get(date, [])
+
+
+def cl_daily_hlc(daily_csv):
+    return daily_hlc_from_df(_read_cache(daily_csv))
+
+
+def cl_roll_days(daily_csv):
+    return roll_days_from_df(_read_cache(daily_csv))
+
+
+if __name__ == "__main__":
     # mock 1-min bars across a DST boundary: 2024-03-10 is US spring-forward.
     # 14:00 UTC = 10:00 EDT (after DST) ; 14:00 UTC on 2024-01-10 = 09:00 EST.
     idx = pd.to_datetime([
@@ -76,3 +135,12 @@ if __name__ == "__main__":
     assert roll_days_from_df(d) == {"2024-01-12"}, roll_days_from_df(d)
     print("Task 1b OK: daily_hlc_from_df + roll_days_from_df")
     print("ALL Task 1 self-tests passed")
+
+    # --- Task 2: round-trip a mock df through the CSV cache helpers ---
+    import tempfile
+    p = os.path.join(tempfile.mkdtemp(), "CL_1d_x.csv")
+    _write_cache(d, p)
+    back = _read_cache(p)
+    assert daily_hlc_from_df(back)["2024-01-11"] == (76.0, 70.0, 75.0), "cache round-trip HLC"
+    assert cl_roll_days(p) == {"2024-01-12"}, "cache round-trip rolls"
+    print("Task 2 OK: cache write/read round-trip")
