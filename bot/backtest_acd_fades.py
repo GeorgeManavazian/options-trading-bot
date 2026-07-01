@@ -43,11 +43,8 @@ def price_cell(cell, setup, closes, target=0.5, stop=0.5):
         return None
     if debit <= 0:                                 # inverted/degenerate -> skip
         return None
-    settle_raw = closes.get(cell["settle_date"])
-    if settle_raw is None:
-        return None
-    settle_px = settle_raw[2] if isinstance(settle_raw, tuple) else float(settle_raw)
-    if settle_px <= 0:
+    settle_px = closes.get(cell["settle_date"])
+    if settle_px is None or settle_px <= 0:
         return None
     struct = cell["structure"]
     hold_val = expire_value(struct, settle_px)     # hold-to-expiry
@@ -143,7 +140,7 @@ if __name__ == "__main__":
                "long_contract": ("SPX", "2024-06-03", "2024-06-03", 5000.0, "call"),
                "short_contract": ("SPX", "2024-06-03", "2024-06-03", 5025.0, "call"),
                "settle_date": "2024-06-03"}
-    tr = price_cell(ds_cell, setup, {"2024-06-03": (0, 0, 5040.0)})
+    tr = price_cell(ds_cell, setup, {"2024-06-03": 5040.0})
     # debit = 32 - 18 = 14; expire_value(bull call, 5040) = min(40,25) = 25; pnl=(25-14)*100
     assert tr is not None and abs(tr["debit"] - 14.0) < 1e-9 and tr["pnl0"] == 1100.0, tr
     assert tr["nlegs"] == 2 and "pnl0_ts" in tr, tr
@@ -153,7 +150,7 @@ if __name__ == "__main__":
                "structure": {"kind": "long_option", "opt_type": "call", "long_strike": 5000.0},
                "long_contract": ("SPX", "2024-06-03", "2024-06-03", 5000.0, "call"),
                "short_contract": None, "settle_date": "2024-06-03"}
-    tr2 = price_cell(lo_cell, setup, {"2024-06-03": (0, 0, 5040.0)})
+    tr2 = price_cell(lo_cell, setup, {"2024-06-03": 5040.0})
     # debit = ask 32; expire_value = 40; pnl = (40-32)*100 = 800
     assert tr2["debit"] == 32.0 and tr2["pnl0"] == 800.0 and tr2["nlegs"] == 1, tr2
     print(f"OK price_cell long option (debit 32, pnl {tr2['pnl0']})")
