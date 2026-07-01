@@ -4,6 +4,7 @@
 import os
 import statistics
 from collections import Counter
+from itertools import accumulate
 
 from acd_micro import build_day
 from acd_macro import DayEntry, macro_context, apply_macro, BREAKOUT, FADES
@@ -12,8 +13,72 @@ from acd_cl import CL
 from load_cl_databento import (pull_cl_minutes, pull_cl_daily,
                                cl_day_path, cl_daily_hlc, cl_roll_days,
                                bars_by_et_day, _read_cache)
+from backtest import max_drawdown
 
 START, END = "2010-06-06", "2026-06-29"
+
+POINT_VALUE = 1000.0        # CL: $1000 per 1.00 point
+
+
+def pnl_trades(sigs, dates, idx, closes, hold, tick=0.01):
+    out = []
+    for date, direction, entry, name, conv in sigs:
+        i = idx.get(date)
+        if i is None or i + hold >= len(dates) or entry <= 0:
+            continue
+        exit_px = closes[dates[i + hold]]
+        if exit_px <= 0:
+            continue
+        sign = 1.0 if direction == "long" else -1.0
+        out.append({"date": date, "name": name, "direction": direction,
+                    "entry": entry, "exit": exit_px,
+                    "ret": (exit_px / entry - 1.0) * sign,
+                    "usd": (exit_px - entry) * sign * POINT_VALUE})
+    return out
+
+
+def slip_ret(t, ticks):
+    return t["ret"] - 2 * ticks * t.get("tick", 0.01) / t["entry"]
+
+
+def _ret_stats(rets):
+    n = len(rets)
+    if not n:
+        return 0, 0.0, 0.0, 0.0, 0.0
+    wins = sum(1 for r in rets if r > 0)
+    total = sum(rets)
+    mdd = max_drawdown(list(accumulate(rets)))
+    ra = total / abs(mdd) if mdd else (float("inf") if total > 0 else 0.0)
+    return n, wins / n, total, mdd, ra
+
+
+def report_pnl(trades, tick=0.01):
+    if not trades:
+        print("  (no trades)"); return
+    rets = [t["ret"] for t in trades]
+    n, wr, tot, mdd, ra = _ret_stats(rets)
+    sd = statistics.pstdev(rets)
+    sharpe = statistics.mean(rets) / sd if sd > 0 else 0
+    usd = sum(t["usd"] for t in trades)
+    print(f"\n=== CL P&L — {n} trades ===")
+    print(f"@0 slip: win {wr:.0%}  total {tot:+.0%} on entry  ${usd:+,.0f}/1-contract  "
+          f"maxDD {mdd:.0%}  RISK-ADJ {ra:+.2f}  Sharpe {sharpe:+.2f}")
+    print("by family:")
+    for label, keys in [("BREAKOUTS", BREAKOUT), ("fades", FADES)]:
+        sub = [t["ret"] for t in trades if t["name"] in keys]
+        if sub:
+            w = sum(1 for r in sub if r > 0)
+            print(f"    {label:<10} n={len(sub):>4}  win {w/len(sub):.0%}  total {sum(sub):+.0%}")
+    print("by year:")
+    for yr in sorted({t["date"][:4] for t in trades}):
+        sub = [t["ret"] for t in trades if t["date"][:4] == yr]
+        w = sum(1 for r in sub if r > 0)
+        print(f"    {yr}  n={len(sub):>4}  win {w/len(sub):.0%}  total {sum(sub):+.0%}")
+    print("slippage sweep (ticks/side):")
+    for ticks in (0, 1, 2, 5):
+        rr = [slip_ret(t, ticks) for t in trades]
+        n2, wr2, tot2, _, ra2 = _ret_stats(rr)
+        print(f"  {ticks}t:  win {wr2:.0%}  total {tot2:+.0%}  risk-adj {ra2:+.2f}")
 
 
 def build_cl_history(min_csv, daily_csv):
@@ -53,6 +118,9 @@ def run(min_csv, daily_csv):
     _edge([s for s in micro if s[3] in BREAKOUT], dates, idx, closes, "MICRO BREAKOUTS (the CL test)")
     _edge([s for s in micro if s[4] >= 3], dates, idx, closes, "MICRO high-conviction (>=3)")
     _edge(macro, dates, idx, closes, "MACRO (reversal/trt/sushi)")
+    for hold, tag in [(0, "same-day"), (1, "+1d"), (5, "+5d")]:
+        print(f"\n########## HOLD {tag} ##########")
+        report_pnl(pnl_trades(micro, dates, idx, closes, hold))
     return hist, micro, macro
 
 
@@ -71,6 +139,24 @@ if __name__ == "__main__":
     h = build_cl_history(mcsv, dcsv)
     assert all(e.date != "2024-01-12" for e in h), "roll day excluded"
     print(f"Task 4 self-test OK: build_cl_history skipped roll day, {len(h)} entries")
+
+    # --- Task 5: P&L + stats on hand-built trades ---
+    fake = [
+        {"date":"2020-01-02","name":"a_held","direction":"long","entry":100.0,"exit":102.0,
+         "ret":0.02,"usd":2000.0},
+        {"date":"2021-05-05","name":"failed_a","direction":"short","entry":50.0,"exit":49.0,
+         "ret":0.02,"usd":1000.0},
+        {"date":"2021-06-06","name":"a_held","direction":"long","entry":80.0,"exit":76.0,
+         "ret":-0.05,"usd":-4000.0},
+    ]
+    n, wr, tot, mdd, ra = _ret_stats([t["ret"] for t in fake])
+    assert n == 3 and abs(tot - (-0.01)) < 1e-9, (n, tot)
+    assert abs(wr - 2/3) < 1e-9, wr
+    # slippage haircut reduces a positive return
+    assert slip_ret(fake[0], 1) < fake[0]["ret"], "slippage lowers return"
+    print("Task 5 OK: _ret_stats + slip_ret")
+    report_pnl(fake)                      # smoke: prints per-family + per-year + sweep without error
+    print("ALL backtest_acd_cl self-tests passed")
 
     # if the full-history cache is present, run the real diagnostic too
     if os.path.exists(os.path.join(os.path.dirname(__file__), "..", "data_cache",
