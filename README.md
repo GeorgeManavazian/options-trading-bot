@@ -33,7 +33,7 @@ Three years, July 2023 to June 2026, 119 trades on real IVolatility option price
 | Positive years | **all 4 (incl. 2026)** | 2 of 4 |
 | Survives 10¢/contract slippage | **yes** | yes |
 
-What that looks like as a real account: **$10,000 risking 1% per trade grows to about $14,171 (+42%), and the worst dip along the way is 1.1%.** Money made in every year, including 2026, the year the unfiltered version lost.
+What that looks like as a real account: **$10,000 compounding at 3% of equity per trade grows to about $34,374 (+244%) over the backtest, with a worst backtest dip of 3.3%.** Money made in every year, including 2026, the year the unfiltered version lost. Note that 3% is an aggressive size for an edge that has not traded live yet: the backtest dip is a lucky-ordering artifact, and a realistic worst case under stress testing is closer to 10%.
 
 Two findings mattered more than the numbers:
 
