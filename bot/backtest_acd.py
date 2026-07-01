@@ -15,7 +15,7 @@ def simulate_hold(direction, position, expiration, entry_date, day_list, hlc, ma
     caller via the signal's stop_B check before calling. Returns (pnl, exit_date, reason).
 
     mark_fn(date, expiration, legs) -> net_exit or None. On a None (marking gap) we carry
-    the most recent good mark; a trade that never marks returns (None, None, "no_mark").
+    the most recent good mark; a trade that never marks returns (None, exit_date, "no_mark").
     """
     entry_cost = position["entry_cost"]
     legs = position["legs"]
