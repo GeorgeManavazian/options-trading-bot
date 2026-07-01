@@ -33,7 +33,7 @@ def pnl_trades(sigs, dates, idx, closes, hold, tick=0.01):
         out.append({"date": date, "name": name, "direction": direction,
                     "entry": entry, "exit": exit_px,
                     "ret": (exit_px / entry - 1.0) * sign,
-                    "usd": (exit_px - entry) * sign * POINT_VALUE})
+                    "usd": (exit_px - entry) * sign * POINT_VALUE, "tick": tick})
     return out
 
 
