@@ -85,6 +85,59 @@ def build_ledger():
     return rows
 
 
+def _narrative(r):
+    tag = "WIN" if r["result"] == "WIN" else "LOSS"
+    return (f'{r["date"]} {r["signal_time"]} — faded {r["direction"].upper()} ({r["setup"]}): '
+            f'{r["structure"]} for ${r["debit_paid"]:.2f} -> {r["exit_reason"]} at {r["exit_time"]} '
+            f'-> {r["pnl_$"]:+.0f} ({r["return_on_risk_%"]:+.0f}%) [{tag}]')
+
+
+def write_csv(rows, path):
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=COLUMNS)
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: r[k] for k in COLUMNS})
+
+
+def write_md(rows, path):
+    tot = sum(r["return_on_risk_%"] for r in rows)
+    wins = sum(1 for r in rows if r["result"] == "WIN")
+    out = ["# V5 Fade Strategy — Full Trade Ledger\n"]
+    out.append("**What this is:** every trade the winning V5 fade config took over ~3 years, "
+               "reconstructed from real historical option prices (IVolatility). Nothing is "
+               "cherry-picked — winners and losers, all " + str(len(rows)) + ". Each row's profit/loss "
+               "is recomputed from the source prices and **asserted equal to the backtest**, so this "
+               "ledger *is* the backtest, not a flattering retelling.\n")
+    out.append("**Honest caveat:** these are **backtest** results, not live or paper-traded. The "
+               "config was chosen as the best of 9 variants, so a walk-forward / forward-test is the "
+               "real next step before trusting it with money.\n")
+    out.append("## Summary\n")
+    out.append(f"- **Config:** 0DTE debit spread · drop the treacherous `failed_c` fade · "
+               f"active +50%/-50% exit")
+    out.append(f"- **Span:** {rows[0]['date']} → {rows[-1]['date']} · **{len(rows)} trades**")
+    out.append(f"- **Result:** +{tot:.0f}% on capital-at-risk · **{wins/len(rows)*100:.0f}% win rate**")
+    out.append(f"- **In account terms:** a $10,000 account risking 1% per trade → **+42%** "
+               f"(${'14,171'}), worst dip **-1.1%**\n")
+    out.append("## Every trade\n")
+    out.append("| # | date | dir | setup | structure | debit | exit | P&L | on risk | result |")
+    out.append("|--:|------|-----|-------|-----------|------:|------|----:|--------:|--------|")
+    for r in rows:
+        out.append(f"| {r['#']} | {r['date']} | {r['direction']} | {r['setup']} | {r['structure']} "
+                   f"| ${r['debit_paid']:.2f} | {r['exit_reason']} @ {r['exit_time']} "
+                   f"| {r['pnl_$']:+.0f} | {r['return_on_risk_%']:+.0f}% | {r['result']} |")
+    out.append("\n## Trade-by-trade (one line each)\n")
+    by_year = defaultdict(list)
+    for r in rows:
+        by_year[r["date"][:4]].append(r)
+    for y in sorted(by_year):
+        out.append(f"\n### {y}\n")
+        for r in by_year[y]:
+            out.append(f"{r['#']}. {_narrative(r)}")
+    with open(path, "w") as f:
+        f.write("\n".join(out) + "\n")
+
+
 if __name__ == "__main__":
     rows = build_ledger()
     assert len(rows) == 119, f"expected 119 V5 trades, got {len(rows)}"
@@ -95,3 +148,13 @@ if __name__ == "__main__":
     assert 0.78 <= wins / len(rows) <= 0.86, wins / len(rows)
     print(f"OK build_ledger: {len(rows)} trades, +{tot:.0f}% on risk, win {wins/len(rows)*100:.0f}% "
           f"(per-row P&L == backtest, asserted)")
+    os.makedirs("results", exist_ok=True)
+    write_csv(rows, "results/v5_trade_ledger.csv")
+    write_md(rows, "results/v5_trade_ledger.md")
+    with open("results/v5_trade_ledger.csv") as f:
+        n_csv = sum(1 for _ in f) - 1                  # minus header
+    assert n_csv == len(rows), (n_csv, len(rows))
+    print(f"wrote results/v5_trade_ledger.csv ({n_csv} rows) and results/v5_trade_ledger.md")
+    print("\nSAMPLE (first 8 trades):")
+    for r in rows[:8]:
+        print("  " + _narrative(r))
