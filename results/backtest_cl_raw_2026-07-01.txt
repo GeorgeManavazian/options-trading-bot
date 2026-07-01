@@ -1,0 +1,149 @@
+Task 4 self-test OK: build_cl_history skipped roll day, 2 entries
+Task 5 OK: _ret_stats + slip_ret
+
+=== CL P&L — 3 trades ===
+@0 slip: win 67%  total -1% on entry  $-1,000/1-contract  maxDD 5%  RISK-ADJ -0.20  Sharpe -0.10
+by family:
+    BREAKOUTS  n=   2  win 50%  total -3%
+    fades      n=   1  win 100%  total +2%
+by year:
+    2020  n=   1  win 100%  total +2%
+    2021  n=   2  win 50%  total -3%
+slippage sweep (ticks/side):
+  0t:  win 67%  total -1%  risk-adj -0.20
+  1t:  win 67%  total -1%  risk-adj -0.22
+  2t:  win 67%  total -1%  risk-adj -0.23
+  5t:  win 67%  total -1%  risk-adj -0.28
+ALL backtest_acd_cl self-tests passed
+Full ACD engine over 3969 CL days (2010-06-07 -> 2026-06-26)
+
+MICRO signals: 2554  by name: {'failed_c': 595, 'a_held': 741, 'failed_a': 739, 'first_hour': 17, 'c': 179, 'failed_a_pivot': 109, 'a_through_pivot': 136, 'c_through_pivot': 36, 'late_day_c': 2}
+MACRO signals: 433  by name: {'reversal_trade': 192, 'sushi': 198, 'trt': 43}
+
+--- FILTERED MICRO (all)  (n=2554) ---
+  horizon      n  mean dir-ret  % positive    median
+  same-day  2552      +0.409%        64%   +0.345%
+  +1d       2552      +0.412%        57%   +0.420%
+  +3d       2551      +0.438%        55%   +0.458%
+  +5d       2550      +0.478%        55%   +0.531%
+
+--- MICRO fades  (n=1443) ---
+  horizon      n  mean dir-ret  % positive    median
+  same-day  1442      +0.602%        71%   +0.467%
+  +1d       1442      +0.563%        59%   +0.512%
+  +3d       1441      +0.485%        54%   +0.284%
+  +5d       1441      +0.537%        54%   +0.408%
+
+--- MICRO BREAKOUTS (the CL test)  (n=1111) ---
+  horizon      n  mean dir-ret  % positive    median
+  same-day  1110      +0.158%        55%   +0.130%
+  +1d       1110      +0.216%        55%   +0.306%
+  +3d       1110      +0.377%        56%   +0.537%
+  +5d       1109      +0.401%        55%   +0.712%
+
+--- MICRO high-conviction (>=3)  (n=1467) ---
+  horizon      n  mean dir-ret  % positive    median
+  same-day  1466      +0.416%        64%   +0.381%
+  +1d       1465      +0.468%        59%   +0.478%
+  +3d       1465      +0.473%        56%   +0.511%
+  +5d       1465      +0.445%        56%   +0.718%
+
+--- MACRO (reversal/trt/sushi)  (n=433) ---
+  horizon      n  mean dir-ret  % positive    median
+  same-day   433      +0.006%        22%   +0.000%
+  +1d        433      +0.167%        53%   +0.114%
+  +3d        433      +0.043%        49%   -0.045%
+  +5d        433      +0.186%        53%   +0.405%
+
+########## HOLD same-day ##########
+
+=== CL P&L — 2552 trades ===
+@0 slip: win 64%  total +1044% on entry  $+657,740/1-contract  maxDD 33%  RISK-ADJ +31.78  Sharpe +0.25
+by family:
+    BREAKOUTS  n=1110  win 55%  total +176%
+    fades      n=1442  win 71%  total +869%
+by year:
+    2010  n= 109  win 55%  total +27%
+    2011  n= 190  win 56%  total +38%
+    2012  n= 124  win 65%  total +46%
+    2013  n= 113  win 60%  total +23%
+    2014  n= 122  win 74%  total +71%
+    2015  n= 194  win 68%  total +116%
+    2016  n= 199  win 61%  total +75%
+    2017  n= 143  win 55%  total +30%
+    2018  n= 134  win 72%  total +84%
+    2019  n= 130  win 73%  total +65%
+    2020  n= 176  win 63%  total +164%
+    2021  n= 176  win 68%  total +61%
+    2022  n= 205  win 63%  total +110%
+    2023  n= 161  win 68%  total +73%
+    2024  n= 158  win 67%  total +56%
+    2025  n= 125  win 63%  total +23%
+    2026  n=  93  win 49%  total -17%
+slippage sweep (ticks/side):
+  0t:  win 64%  total +1044%  risk-adj +31.78
+  1t:  win 62%  total +963%  risk-adj +28.50
+  2t:  win 61%  total +881%  risk-adj +25.39
+  5t:  win 57%  total +635%  risk-adj +16.40
+
+########## HOLD +1d ##########
+
+=== CL P&L — 2552 trades ===
+@0 slip: win 57%  total +1051% on entry  $+613,836/1-contract  maxDD 104%  RISK-ADJ +10.13  Sharpe +0.12
+by family:
+    BREAKOUTS  n=1110  win 55%  total +239%
+    fades      n=1442  win 59%  total +811%
+by year:
+    2010  n= 109  win 64%  total +44%
+    2011  n= 190  win 56%  total +41%
+    2012  n= 124  win 54%  total +37%
+    2013  n= 113  win 53%  total +6%
+    2014  n= 122  win 70%  total +90%
+    2015  n= 194  win 70%  total +256%
+    2016  n= 199  win 51%  total -7%
+    2017  n= 143  win 63%  total +47%
+    2018  n= 134  win 71%  total +138%
+    2019  n= 130  win 58%  total +66%
+    2020  n= 178  win 54%  total +186%
+    2021  n= 176  win 54%  total +30%
+    2022  n= 205  win 55%  total +100%
+    2023  n= 161  win 58%  total +81%
+    2024  n= 158  win 51%  total +12%
+    2025  n= 125  win 49%  total -3%
+    2026  n=  91  win 45%  total -73%
+slippage sweep (ticks/side):
+  0t:  win 57%  total +1051%  risk-adj +10.13
+  1t:  win 57%  total +969%  risk-adj +8.73
+  2t:  win 57%  total +886%  risk-adj +7.51
+  5t:  win 55%  total +640%  risk-adj +4.59
+
+########## HOLD +5d ##########
+
+=== CL P&L — 2550 trades ===
+@0 slip: win 55%  total +1218% on entry  $+492,756/1-contract  maxDD 188%  RISK-ADJ +6.48  Sharpe +0.07
+by family:
+    BREAKOUTS  n=1109  win 55%  total +444%
+    fades      n=1441  win 54%  total +774%
+by year:
+    2010  n= 109  win 60%  total +71%
+    2011  n= 190  win 49%  total -81%
+    2012  n= 124  win 54%  total +44%
+    2013  n= 113  win 46%  total -52%
+    2014  n= 122  win 66%  total +224%
+    2015  n= 194  win 62%  total +194%
+    2016  n= 199  win 52%  total +42%
+    2017  n= 143  win 54%  total +18%
+    2018  n= 134  win 60%  total +201%
+    2019  n= 130  win 45%  total -72%
+    2020  n= 176  win 57%  total +520%
+    2021  n= 176  win 62%  total +130%
+    2022  n= 205  win 57%  total +42%
+    2023  n= 161  win 53%  total +11%
+    2024  n= 158  win 49%  total +39%
+    2025  n= 125  win 50%  total -53%
+    2026  n=  91  win 47%  total -61%
+slippage sweep (ticks/side):
+  0t:  win 55%  total +1218%  risk-adj +6.48
+  1t:  win 54%  total +1136%  risk-adj +5.96
+  2t:  win 54%  total +1054%  risk-adj +5.44
+  5t:  win 53%  total +808%  risk-adj +3.30
