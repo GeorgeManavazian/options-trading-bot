@@ -25,6 +25,67 @@ def option_bbo_by_et(df, session_open="09:00", session_close="16:00"):
     return pd.DataFrame(rows, columns=["time","bid","ask"])
 
 
+def definition_snapshot(year, month):
+    """Cache+return the LO.OPT option universe for the first available day of year-month."""
+    path = os.path.join(CACHE_DIR, f"CL_optdef_{year}-{month:02d}.csv")
+    if os.path.exists(path):
+        return pd.read_csv(path, dtype={"raw_symbol": str})
+    start = f"{year}-{month:02d}-01"
+    end_month = month % 12 + 1
+    end_year = year + (1 if month == 12 else 0)
+    end = f"{end_year}-{end_month:02d}-01"
+    data = _client().timeseries.get_range(
+        dataset="GLBX.MDP3", symbols=["LO.OPT"], stype_in="parent",
+        schema="definition", start=start, end=end)
+    df = data.to_df()
+    df = df[df["instrument_class"].isin(["C","P"])].copy()
+    df["exp"] = df["expiration"].astype(str).str[:10]
+    # first available snapshot day only (definitions repeat daily; one snapshot is enough)
+    first_day = df.index.min()
+    df = df[df.index == first_day]
+    out = df[["raw_symbol","instrument_class","strike_price","exp"]].reset_index(drop=True)
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    out.to_csv(path, index=False)
+    return out
+
+
+def _nearest(values, target):
+    return min(values, key=lambda v: abs(v - target))
+
+
+def resolve_legs(date, direction, entry_price, width=2.0, snapshot=None):
+    if entry_price is None or entry_price <= 0:
+        return None
+    if snapshot is None:
+        y, m = int(date[:4]), int(date[5:7])
+        snapshot = definition_snapshot(y, m)
+    ic = "C" if direction == "long" else "P"
+    opt_type = "call" if direction == "long" else "put"
+    df = snapshot[snapshot["instrument_class"] == ic]
+    exps = sorted(e for e in df["exp"].unique() if e >= date)
+    if not exps:
+        return None
+    exp = exps[0]
+    strikes = sorted(df[df["exp"] == exp]["strike_price"].astype(float).unique())
+    if not strikes:
+        return None
+    long_strike = _nearest(strikes, float(entry_price))
+    short_target = long_strike + width if opt_type == "call" else long_strike - width
+    short_strike = _nearest(strikes, short_target)
+    if short_strike == long_strike:
+        return None
+    sub = df[df["exp"] == exp]
+    def sym(strike):
+        r = sub[abs(sub["strike_price"].astype(float) - strike) < 1e-6]
+        return None if r.empty else str(r.iloc[0]["raw_symbol"])
+    ls, ss = sym(long_strike), sym(short_strike)
+    if ls is None or ss is None:
+        return None
+    return {"long_sym": ls, "short_sym": ss, "long_strike": long_strike,
+            "short_strike": short_strike, "opt_type": opt_type, "kind": "debit_spread",
+            "width": abs(short_strike - long_strike), "expiry": exp, "date": date}
+
+
 if __name__ == "__main__":
     import pandas as pd
 
@@ -49,4 +110,22 @@ if __name__ == "__main__":
     out2 = option_bbo_by_et(bad, "09:00", "16:00")
     assert out2["time"].tolist() == ["09:05"], out2["time"].tolist()
     print("Task 1 OK: option_bbo_by_et (ET window, DST, sorted, drop bad quotes)")
+
+    # --- Task 2: resolve_legs on a mock definition snapshot (offline) ---
+    snap = pd.DataFrame({
+        "raw_symbol": ["LON4 C7500","LON4 C7600","LON4 C7700","LON4 C7800",
+                       "LON4 P7500","LON4 P7400","LON4 P7300",
+                       "LOQ4 C7600"],
+        "instrument_class": ["C","C","C","C","P","P","P","C"],
+        "strike_price": [75.0,76.0,77.0,78.0,75.0,74.0,73.0,76.0],
+        "exp": ["2024-06-14"]*7 + ["2024-07-17"],
+    })
+    lg = resolve_legs("2024-06-03","long",76.2,width=2.0,snapshot=snap)
+    assert lg["opt_type"]=="call" and lg["expiry"]=="2024-06-14", lg
+    assert lg["long_strike"]==76.0 and lg["short_strike"]==78.0, lg   # ATM 76, +2 -> 78
+    assert lg["long_sym"]=="LON4 C7600" and lg["short_sym"]=="LON4 C7800", lg
+    sg = resolve_legs("2024-06-03","short",75.1,width=2.0,snapshot=snap)
+    assert sg["opt_type"]=="put" and sg["long_strike"]==75.0 and sg["short_strike"]==73.0, sg  # 75, -2 ->73
+    assert resolve_legs("2024-12-31","long",76.0,snapshot=snap) is None, "no future expiry -> None"
+    print("Task 2 OK: resolve_legs (nearest expiry, ATM long, width short, dir-aware)")
     print("ALL load_cl_options_databento self-tests passed")
