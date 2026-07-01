@@ -1,0 +1,44 @@
+{
+  "total_score": 79,
+  "verdict": "Deploy",
+  "dimensions": [
+    {
+      "name": "Sample Size",
+      "score": 20,
+      "max_score": 20
+    },
+    {
+      "name": "Expectancy",
+      "score": 9,
+      "max_score": 20
+    },
+    {
+      "name": "Risk Management",
+      "score": 10,
+      "max_score": 20
+    },
+    {
+      "name": "Robustness",
+      "score": 20,
+      "max_score": 20
+    },
+    {
+      "name": "Execution Realism",
+      "score": 20,
+      "max_score": 20
+    }
+  ],
+  "red_flags": [],
+  "profit_factor": 2.208187134502924,
+  "expectancy": 0.4132,
+  "inputs": {
+    "total_trades": 2554,
+    "win_rate": 64.0,
+    "avg_win_pct": 1.18,
+    "avg_loss_pct": 0.95,
+    "max_drawdown_pct": 33.0,
+    "years_tested": 16,
+    "num_parameters": 3,
+    "slippage_tested": true
+  }
+}
