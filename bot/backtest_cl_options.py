@@ -45,8 +45,11 @@ def price_signal(setup, width=2.0):
     if not common:
         return None
     series = [(t, close_value(structure, Ls[t], Ss[t])) for t in common]
-    close_val = series[-1][1]
-    active_val = exit_target_stop(debit, series, close_val, 0.5, 0.5)
+    # Floor exit proceeds at 0: a debit spread's worst case is letting it expire (value >= 0),
+    # so you'd never sell for a negative amount even if the closing NBBO is crossed. This caps
+    # loss at the debit (ret >= -100%), economically correct for a debit spread.
+    close_val = max(series[-1][1], 0.0)
+    active_val = max(exit_target_stop(debit, series, close_val, 0.5, 0.5), 0.0)
     return {"date": setup.date, "name": setup.name, "direction": setup.direction,
             "debit": debit, "close_val": close_val, "active_val": active_val}
 
