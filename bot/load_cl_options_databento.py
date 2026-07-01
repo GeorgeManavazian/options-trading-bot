@@ -32,7 +32,7 @@ def definition_snapshot(year, month):
     path = os.path.join(CACHE_DIR, f"CL_optdef_{year}-{month:02d}.csv")
     if os.path.exists(path):
         return pd.read_csv(path, dtype={"raw_symbol": str})
-    start = f"{year}-{month:02d}-01"
+    start = max(f"{year}-{month:02d}-01", "2010-06-06")
     end_month = month % 12 + 1
     end_year = year + (1 if month == 12 else 0)
     end = f"{end_year}-{end_month:02d}-01"
