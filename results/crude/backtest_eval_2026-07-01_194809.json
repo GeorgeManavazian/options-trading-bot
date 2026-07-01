@@ -1,0 +1,55 @@
+{
+  "total_score": 60,
+  "verdict": "Refine",
+  "dimensions": [
+    {
+      "name": "Sample Size",
+      "score": 20,
+      "max_score": 20
+    },
+    {
+      "name": "Expectancy",
+      "score": 0,
+      "max_score": 20
+    },
+    {
+      "name": "Risk Management",
+      "score": 0,
+      "max_score": 20
+    },
+    {
+      "name": "Robustness",
+      "score": 20,
+      "max_score": 20
+    },
+    {
+      "name": "Execution Realism",
+      "score": 20,
+      "max_score": 20
+    }
+  ],
+  "red_flags": [
+    {
+      "id": "excessive_drawdown",
+      "severity": "high",
+      "message": "Max drawdown 2897.0% exceeds 50% threshold — catastrophic risk."
+    },
+    {
+      "id": "negative_expectancy",
+      "severity": "high",
+      "message": "Negative expectancy (-0.978%) — strategy loses money on average."
+    }
+  ],
+  "profit_factor": 0.910553498788793,
+  "expectancy": -0.9784999999999986,
+  "inputs": {
+    "total_trades": 1962,
+    "win_rate": 35.0,
+    "avg_win_pct": 28.46,
+    "avg_loss_pct": 16.83,
+    "max_drawdown_pct": 2897.0,
+    "years_tested": 16,
+    "num_parameters": 4,
+    "slippage_tested": true
+  }
+}

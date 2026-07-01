@@ -1,0 +1,84 @@
+
+=== CL OPTIONS [close_val] — 3 trades ===
+@0 slip: win 67%  total +50% on risk  maxDD 50%  RISK-ADJ +1.00  Sharpe +0.35
+    BREAKOUTS  n=   2  win 50%  total -10%
+    fades      n=   1  win 100%  total +60%
+  by year:
+    2020  n=   1  win 100%  total +40%
+    2021  n=   2  win 50%  total +10%
+  slippage sweep ($/leg/side):
+    0.00:  win 67%  total +50%  risk-adj +1.00
+    0.01:  win 67%  total +37%  risk-adj +0.70
+    0.02:  win 67%  total +25%  risk-adj +0.45
+    0.05:  win 67%  total -9%  risk-adj -0.14
+
+=== CL OPTIONS [active_val] — 3 trades ===
+@0 slip: win 67%  total +50% on risk  maxDD 50%  RISK-ADJ +1.00  Sharpe +0.35
+    BREAKOUTS  n=   2  win 50%  total +0%
+    fades      n=   1  win 100%  total +50%
+  by year:
+    2020  n=   1  win 100%  total +50%
+    2021  n=   2  win 50%  total +0%
+  slippage sweep ($/leg/side):
+    0.00:  win 67%  total +50%  risk-adj +1.00
+    0.01:  win 67%  total +37%  risk-adj +0.70
+    0.02:  win 67%  total +25%  risk-adj +0.45
+    0.05:  win 67%  total -9%  risk-adj -0.14
+Task 4 self-test OK: slip_ret + report
+CL options overlay: 1962 trades (594 dropped) from 2556 signals
+
+=== CL OPTIONS [close_val] — 1962 trades ===
+@0 slip: win 35%  total -1906% on risk  maxDD 2897%  RISK-ADJ -0.66  Sharpe -0.03
+    BREAKOUTS  n= 886  win 35%  total -2428%
+    fades      n=1076  win 35%  total +522%
+  by year:
+    2010  n=  55  win 29%  total +58%
+    2011  n= 113  win 14%  total -1698%
+    2012  n=  80  win 28%  total -449%
+    2013  n=  92  win 34%  total -522%
+    2014  n= 100  win 45%  total +784%
+    2015  n= 189  win 42%  total +239%
+    2016  n= 185  win 32%  total -654%
+    2017  n= 132  win 34%  total -394%
+    2018  n= 120  win 52%  total +699%
+    2019  n= 106  win 42%  total +284%
+    2020  n= 114  win 16%  total -662%
+    2021  n= 119  win 39%  total +280%
+    2022  n= 126  win 30%  total +262%
+    2023  n= 126  win 43%  total +138%
+    2024  n= 132  win 42%  total +686%
+    2025  n= 106  win 36%  total -352%
+    2026  n=  67  win 27%  total -606%
+  slippage sweep ($/leg/side):
+    0.00:  win 35%  total -1906%  risk-adj -0.66
+    0.01:  win 28%  total -12091%  risk-adj -0.98
+    0.02:  win 22%  total -21691%  risk-adj -0.99
+    0.05:  win 11%  total -47536%  risk-adj -1.00
+
+=== CL OPTIONS [active_val] — 1962 trades ===
+@0 slip: win 35%  total -2774% on risk  maxDD 2980%  RISK-ADJ -0.93  Sharpe -0.04
+    BREAKOUTS  n= 886  win 35%  total -2592%
+    fades      n=1076  win 36%  total -182%
+  by year:
+    2010  n=  55  win 29%  total +72%
+    2011  n= 113  win 18%  total -1391%
+    2012  n=  80  win 30%  total -3%
+    2013  n=  92  win 35%  total -531%
+    2014  n= 100  win 45%  total +778%
+    2015  n= 189  win 40%  total -349%
+    2016  n= 185  win 32%  total -337%
+    2017  n= 132  win 34%  total -504%
+    2018  n= 120  win 52%  total +302%
+    2019  n= 106  win 42%  total +276%
+    2020  n= 114  win 16%  total -1015%
+    2021  n= 119  win 39%  total +439%
+    2022  n= 126  win 30%  total -111%
+    2023  n= 126  win 44%  total +235%
+    2024  n= 132  win 42%  total +257%
+    2025  n= 106  win 38%  total -8%
+    2026  n=  67  win 27%  total -885%
+  slippage sweep ($/leg/side):
+    0.00:  win 35%  total -2774%  risk-adj -0.93
+    0.01:  win 28%  total -12896%  risk-adj -1.00
+    0.02:  win 23%  total -22441%  risk-adj -1.00
+    0.05:  win 12%  total -48155%  risk-adj -1.00
