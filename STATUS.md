@@ -3,8 +3,22 @@
 > This is the home base. A fresh session reads this first and knows exactly where we are.
 > Update the "Current status", "Next step", and "Session log" whenever something meaningful happens.
 
-## Current phase
-**Phase 2 — BUILD (in progress), now with a THIRD strategy strand.** Bot #1 (1DTE condor) = built, backtested, LOST → shelved. Bot #2 (ORB) = built, 3-yr backtested, **first real edge (Kirk let-expire, +EV, cost-robust)**. **Bot #3 (Mark Fisher's ACD) = NEW, currently in DESIGN/brainstorming** (research done, `strategies/ACD.md` written; now scoping the option-wrapper bake-off — see Session 6 log + "RESUME HERE" below). Older context: Strategy chosen. Environment set up; rules engine + delta strike selection done. **Backtester built end-to-end** — fake-data scaffold (`bot/backtest.py`) AND the real day-by-day loop (`bot/backtest_chains.py`), both reporting **win rate, equity curve, max drawdown**. `condor_rules.build_condor` is decoupled from any data source (eats live/historical/fake chains alike — the seam). Data vendor chosen: **IVolatility (IVolAI Builder $79 7-day trial)**; loaders for its CSV (`load_ivol.py`) and its official Python-library API (`load_ivolai.py`) are written + tested on mock data, and an IV-from-price solver is in `greeks.py`. **Blocked only on the user's live API key** to run the first real SPX 1DTE backtest. Honest caveat learned: fake bell-curve data gives a fairy-tale 96% win rate (no crash days) — a backtest is only as honest as its data.
+## ⚡ CURRENT PHASE (as of Session 9, 2026-07-01) — READ THIS, then the Session 9 log entry
+**THE FULL MARK FISHER ACD BOT IS BUILT (①②③④) and produced a REAL, COST-ROBUST-but-not-yet-deployable options edge.** This is the live workstream. (Earlier bots are shelved history: 1DTE condor LOST; ORB found an edge but savage drawdown; "momentum-ACD" was a *fragment* we wrongly called falsified — the FULL method is what we then built.)
+
+**The full ACD bot (all on `main`, on GitHub, all self-tests green):**
+- `bot/acd_micro.py` — ① intraday engine: opening range, A/B/C/D, hold-clock, all **9 setups** (breakouts + fades/reversals). Instrument-agnostic via `InstrumentSpec`. Emits `DayResult{events, setups}`.
+- `bot/acd_macro.py` — ② multi-day layer: number line + **chop filter**, pivot-MA regimes, momentum, plus/minus, **Reversal Trade / TRT / sushi**, and `apply_macro` (filters + confluence-sizes the micro setups). Consumes `DayEntry(date, ohlc, DayResult)`.
+- `bot/acd_options.py` — ③ options overlay: `express(setup, chain, policy)` maps signal→structure (fade→debit spread; macro→long option/debit by conviction; breakout→credit spread) + `size_position` (scales by conviction). Reuses `acd_wrappers.py`.
+- `bot/diag_full_signal.py` — the CHECKPOINT (PASSED: full engine shows real directional edge — fades + high-conviction + macro reversals; breakouts ~flat on SPX).
+- `bot/backtest_acd_full.py` — ④ backtest (multiday slice): full engine → options → marked on cached dated chains. **RESULT: multiday macro signals HELD 5 DAYS = +476% on risk, cost-robust (+428% @20c/leg), positive expectancy. `backtest-expert` grade = 55/100 REFINE** (🚩 743% drawdown, 🚩 8 params / 5-day hold chosen from checkpoint, 🚩 only 3yr). The reused 3-day pivot TRAILING stop LOST −163% → **too-tight-exit is the recurring lesson; hold-to-horizon is the fix.**
+- `strategies/ACD.md` = the COMPLETE page-cited ruleset (whole book). Read it for any rule.
+
+**⚡ SPRINT START (Session 10):** pick a refine lever — **(a) ④b: backtest the INTRADAY FADES** (strongest checkpoint edge, not yet in options; needs 0DTE-spread pricing via `load_ivol_intraday`/`orb_exits`, maybe new strike pulls); **(b) tame the 743% drawdown** (sizing caps, blend fades); **(c) out-of-sample / walk-forward** the hold+policy (kills the overfitting flag; needs more years → data pull); **(d) run INSTRUMENT-AGNOSTIC on a TRENDING market** (the payoff — the breakout half should work where SPX mean-reversion suppressed it). User leans "keep going, autonomous is fine." Process: brainstorm→spec→plan→build per sub-project, subagent/opus review each (reviews have caught real bugs every time). ⏰ KEEP IVolatility (do NOT cancel). Book PDF is in `research/` (gitignored) — NEVER run git-history rewrites near it.
+
+---
+### (older context — pre-ACD-bot, for reference only)
+**Phase 2 — BUILD.** Bot #1 (1DTE condor) built/backtested/LOST → shelved. Bot #2 (ORB) built, 3-yr backtested, first real edge (Kirk let-expire, cost-robust) but savage drawdown + regime-dependent → shelved. Data vendor: **IVolatility** (`load_ivolai.py` API loader, `load_ivol_intraday.py` intraday, `load_acd_dated.py` dated chains). ~3yr SPX data cached in `data_cache/` (0DTE + dte10-50). Honest caveat learned early: a backtest is only as honest as its data.
 
 ## Dev environment (set up Session 2, 2026-06-30)
 - **Python 3.12.13** via Homebrew at `/opt/homebrew/bin/python3.12` (Apple's old 3.9.6 left untouched alongside it).
