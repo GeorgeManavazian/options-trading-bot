@@ -1,117 +1,157 @@
-# The ACD Method — Mark Fisher
+# The ACD Method — Mark Fisher, *The Logical Trader* (COMPLETE ruleset)
 
-Source: Mark B. Fisher, *The Logical Trader: Applying a Method to the Madness* (Wiley, 2002). Full scanned book in `research/The_Logical_Trader_Applying_A_Method_To_The_Madness.pdf`. Rules below were extracted chapter-by-chapter (Ch. 1–3, Appendix, Glossary) with page citations — see the session log in `STATUS.md`.
-
-> Everything here is **what the book actually says**, not generic internet ACD. Where Fisher hides something (the A-value formula), it's flagged loudly.
-
-## What it is, in one sentence
-Use the **high–low of the first 15 minutes** as the day's reference range; when price pushes a set distance beyond that range **and holds there for half the range's duration**, trade in that direction — with built-in stops at the range edge and a separate "pivot range" (from yesterday) as a trend filter.
-
-## How it relates to what we've already built
-ACD is the **smarter cousin of our ORB bot.** Both are built on the *opening range*. The difference is what they do with it:
-
-| | ORB (the bot we have) | ACD (this strategy) |
-|---|---|---|
-| Opening range | First **60 min** | First **15 min** (S&P) |
-| Trigger | Price simply breaks the range | Price moves a **set distance** past it (the "A value") **and holds for half the range time** |
-| Fakeout defense | A filter bolted on later (ADX, range width) | **Built into the trigger** — a quick poke-and-snap-back doesn't count |
-| Reversals | None | The **"C"** level + the **"failed-A rubber band"** trade |
-| Stops | Spread width | **B / D** levels at the range edges + the pivot range |
-| Trend filter | (none in v1) | The **pivot range** from yesterday's H/L/C |
-
-👉 The time-hold requirement is the headline. Remember our ORB whipsaw on 6/04 (−70% on a breakout that immediately reversed)? ACD's "must *stay* beyond the level" rule is engineered to reject exactly those head-fakes.
+> **Authoritative spec.** Rebuilt 2026 from a full-book read (all 8 chapters + Appendix + Glossary),
+> replacing the earlier partial summary. Page citations are BOOK pages. Where Fisher withholds a
+> formula (the A/C values) it is flagged loudly. This is the reference for building the FULL ACD bot.
+>
+> **Key correction to our earlier work:** we implemented only the *micro A-held breakout + pivot filter
+> + a naive 3-day trailing stop* — roughly 15% of the method, and the part that fights SPX's mean-reverting
+> nature. The real method is a two-layer system (MICRO intraday + MACRO multi-day) with reversal setups,
+> a trend/chop filter (the number line), a regime classifier (pivot moving averages), and confluence-based
+> sizing. See "What we missed" at the end.
 
 ---
 
-## The four building blocks
+## 0. Philosophy (Introduction; Glossary)
+- ACD plots objective price points **relative to the opening range**; those points are **references** — "where you get out if you're wrong" — not predictions. *(Ch.1 p.9; Glossary "Points of reference" p.246)*
+- **"In trading, time is more important than price."** A level only counts if price *holds* there. *(Ch.1 p.19; Glossary "Time factor" p.248)*
+- Two layers: **Micro ACD** (floor/day-trading: A, C, B, D, opening range, daily pivot, pivot first-hour) and **Macro ACD** (multi-day: plus/minus days, number line, change-in-trend, rolling pivots, first-two-weeks, pivot-MA slopes). *(Intro p.1; Glossary "Micro ACD" p.244, "Macro ACD" p.243)*
+- **Next! / "maximize size, minimize risk":** seek immediate gratification; if a trade doesn't work fast, get out; size up only when confluence tightens the stop. *(Glossary p.243, p.245)*
+- Market must have **liquidity + intraday volatility** to be ACD-tradeable. *(Ch.1 p.34; Glossary p.243, p.249)*
 
-### 1. The opening range
-- The **high and low of the first 15 minutes** of the session (9:30–9:45 ET for the S&P). *(Fisher: stocks use 20 min; commodities 5–30 min by trader preference. The S&P value comes from his Appendix table — see below.)*
-- Why 15 min and not any random 15-min window? Fisher's claim: the opening range marks the day's high or low **~20% of the time** — far more than the ~1-in-16 random-walk odds. It's the "statistically significant" part of the day. *(Ch. 1, p. 12)*
+---
 
-### 2. The "A" — the breakout trigger (with a clock)
-- **A up** = opening-range high **+ the A value**. **A down** = opening-range low **− the A value**.
-- It only counts if price **holds at that level for at least half the opening-range duration** (so ~7.5 min for a 15-min range). A touch that snaps right back is **not** an A. *(Fisher: "In trading, time is more important than price.")*
-- **A up held → go long. A down held → go short.**
-- **Only ONE A per day.** Once an A up is set, there can be no A down that day (and vice versa). The day's directional bias is committed. *(Ch. 1, p. 15)*
+# PART A — MICRO ACD (the intraday engine)
 
-### 3. The "C" — the second-chance / reversal trigger
-- If the A fails and price reverses back *through* the opening range, the **C** level (further out than A) is the next entry, in the **opposite** direction.
-- A **C down** can only happen after a confirmed **A up** (and a **C up** only after an **A down**). It's the "the breakout was a trap, now fade it" trade. *(Glossary, p. 240)*
-- Same time rule: must hold for half the opening-range duration.
+## A1. The Opening Range (OR)  *(Ch.1 pp.10–13)*
+- The OR = high & low of the **first N minutes** of the session in the instrument's **domicile market**.
+- **Duration by instrument (Table A.5, p.222):**
+  | Instrument | OR length |
+  |---|---|
+  | **S&P 500 & Nasdaq futures** | **15 min** |
+  | Stocks (general) | 20 min |
+  | Most commodity futures | 5 min |
+  | FX cash / London Brent | 30 min |
+  - *(Our SPX 15-min choice was correct.)*
+- Fixed per instrument, used identically every day. Domicile-market rule: use the exchange where the instrument primarily trades (ADRs → foreign open, etc.). *(p.11)*
+- **Statistically significant:** the OR marks the day's high or low **~17–23% (~20%)** of the time in volatile markets vs. ~3% random. This is ACD's foundational premise. *(pp.12–13; Glossary "Statistically significant" p.248)*
 
-### 4. B and D — the built-in stops
-- **B** = the **far edge of the opening range** → your stop on an A trade. (Long via A up? Stop = bottom of the range. At B your bias is "neutral — wait.") *(Ch. 1, pp. 15–16)*
-- **D** = the stop on a C trade (1 tick beyond the opposite range edge). **Hit D and you're done with that market for the day** — "chopped up enough." *(Glossary, p. 246)*
+## A2. The A / B / C / D points  *(Ch.1 pp.13–18; Glossary pp.239–246)*
+- **A up** = OR-high + A-value. **A down** = OR-low − A-value. Confirmed only if price **holds at/beyond the level ≥ half the OR duration** (15-min OR → **7.5 min**). *(p.15)*
+  - A up held → **long**, stop = OR-low (Point B). A down held → **short**, stop = OR-high (Point D).
+- **Only ONE A per day.** Once an A up is confirmed, no A down that day (and vice-versa). Bias is committed. *(p.15)*  *(But a **failed** A does NOT consume the one-A rule — the opposite A is "still in the running." p.19)*
+- **Point B** = neutral level after an A up = **bottom of the OR** (Glossary says B = OR bottom for A-up / OR top for A-down; Ch.1 example uses OR-low − 1 tick). It is the **stop for an A trade**. Reaching B → bias neutral, wait. *(p.16; Glossary p.246)*
+- **Point C** = the crossover that flips bias to the opposite side, **after** an A. **C up** = OR-high + C-value; **C down** = OR-low − C-value. Same ≥½-OR hold rule. A **C down** can only occur after a confirmed **A up** (and C up only after A down). *(pp.16–17; Glossary p.240)*
+  - Enter in C's direction; **stop = Point D** (opposite OR edge + 1 tick). Hitting D → "chopped up enough, done for the day." *(p.17; Glossary "Point D" p.246)*
+- **A-values / C-values are PROPRIETARY** (volatility-based; formula withheld). Fisher gives per-instrument numbers in the Appendix. **Stocks: C = A. Commodities: C ≠ A (usually C > A).** *(pp.14,16; Glossary p.240)*
 
-### 5. The pivot range — yesterday's trend filter
-Computed from **yesterday's** High/Low/Close:
+## A3. The A/C values that ARE published (Appendix Table A.5, p.222, Dec 2001)
+| Market | OR | A value | C value |
+|---|---|---|---|
+| **S&P 500** | 15 min | **17.5** | **20.5** |
+| Nasdaq | 15 min | 24 | (illegible) |
+| Corn | 5 | 1.6 | 1.2 |
+| Cocoa | 5 | 10 | 15 |
+| Cotton | 5 | 5 | 9 |
+| Euro/$ (ED) | 5 | 13 | 4 |
+| Unleaded gas | 5 | 115 | 135 |
+| Live hogs | 5 | 150 | 220 |
+| Platinum | 5 | 100 | 100 |
+| British £ (fut) | 5 | 7 | 12 |
+- Values are in each market's **ticks**, periodically re-calibrated. (Ch.1's older S&P example used A=2.00/C=1.50 index points — a different snapshot/unit; the reader flagged C<A there as possibly anomalous. The **structural** rule is C usually ≥ A.)
+- **For our bot:** port the A/C value as a **% of price or a fraction of ATR** and **backtest-tune** it (Fisher's formula is unavailable). S&P A≈17.5, C≈20.5 in 2001-tick terms → anchor and sweep.
+
+## A4. Failed A / Failed C — the "rubber band" reversals  *(Ch.1 pp.25–29; Glossary pp.241–242)*
+- **Failed A:** price reaches A but does NOT hold ≥½-OR (or reverses back into the OR). **Fade it:** failed A-up → **short** (stop just above A-up); failed A-down → **long** (stop just below A-down). Small risk, large reward (Fisher's example: *"made 126 ticks, risked 4"*). *(pp.26–28)*
+- **Failed C** = the **"Treacherous Trade"**: price reaches C but doesn't hold; snaps back — often off the pivot range. Fade toward the OR. **No clean stop** — Fisher warns it's risky; "immediate gratification, take profits quickly." *(Glossary p.242; Ch.3 p.75)*
+- **Failed A against/within the pivot** is *stronger*: if the pivot stops the A, the failure confirms support/resistance → higher-probability fade with the pivot band as the reference. *(Glossary pp.241–242; Ch.3 p.65)*
+
+---
+
+# PART B — THE PIVOT RANGE (the support/resistance & trend core)
+
+## B1. Daily pivot range formula  *(Ch.2 pp.37–38; Glossary p.241)*
 ```
-Pivot Price   = (High + Low + Close) / 3
-Second Number = (High + Low) / 2
-Differential  = | Pivot Price − Second Number |
-Pivot Range   = Pivot Price ± Differential        # a BAND, not a single line
+Pivot Price  = (High + Low + Close) / 3        # prior day's H/L/C
+Second Number= (High + Low) / 2
+Differential = | Pivot Price − Second Number |
+Pivot Range  = Pivot Price ± Differential       # a BAND
 ```
-- Price **above** the band = bullish bias; **below** = bearish; **inside** = neutral (wait). *(Ch. 2, p. 39)*
-- The band also acts as **support/resistance**, and as a **tighter stop** (see below).
-- A **3-day rolling** version (highest high / lowest low / last close over 3 days, same formula) is used as a **trailing stop** for multi-day holds. *(Ch. 2, p. 47)*
+*(One glossary line typo'd "second = (H+L+C)/2"; Ch.2's worked examples confirm (H+L)/2.)*
+
+## B2. Roles of the pivot range  *(Ch.2 pp.38–43; Glossary)*
+1. **Sentiment/tone:** prior close **above** band → bullish next day; **below** → bearish; **inside** → neutral.
+2. **Support/resistance:** band **below** price = support; **above** = resistance. A **clean break through** the band → expect a significant move that way; a **bounce off** it (not penetrating) → fade (rubber-band).
+3. **Stop / sizing:** when a signal agrees with the pivot, the stop tightens to the far side of the band → **size up** (see D-sizing).
+- **Time stop:** if price sits **inside** the band longer than **3× the OR duration** (e.g., 30 min for a 10-min OR), the pivot is "meaningless for the day" → stand down. *(Ch.3 pp.61–62)*
+- **Small pivot** (narrow band after a normal-range day) → expect a **more volatile / larger-range** next day. **Pivot-on-gap:** a gap that never trades back into the band makes the gap level lasting support/resistance. *(Ch.2 pp.44–46; Glossary)*
+
+## B3. Rolling & longer-term pivots  *(Ch.2 pp.47–54)*
+- **3-day rolling pivot:** same formula with highest-high / lowest-low / last-close over the trailing 3 days. Used as a **trailing stop** and multi-day bias; recompute daily (drop oldest). Fisher also uses **3–6 day** rolling pivots as exit tools (Ch.6). Never change the window mid-trade.
+- **Longer-term pivots** (first-two-weeks, half-year, etc.): identical formula over the period; larger A targets (e.g., 200 ticks) for multi-week horizons. First-two-weeks-of-year and **first trading day of the month** are statistically significant (often the month's high/low). *(pp.46–47, 52–54)*
+
+## B4. Plus / minus days + the 30-day cycle  *(Ch.2 pp.49–51; Glossary pp.244,246)*
+- **Plus day:** OR **below** pivot AND close **above** pivot. **Minus day:** OR **above** pivot AND close **below** pivot. Else **zero**.
+- **30-trading-day cycle:** if 30 days ago was a (volatile) plus day AND today **opens on the matching side** of the pivot, today has a statistically significant chance of also being a plus day (same for minus). Must line up from the open.
 
 ---
 
-## The best trade: "A through the pivot"
-The highest-conviction setup is when **two signals agree**: an A breakout that punches **through the pivot range in the same direction.**
-- A up **+ price above/through the pivot** → strong long. Stop tightens from B (far range edge) up to just **below the pivot band** — same dollar risk, but you can size bigger. *(Ch. 3, pp. 57–60)*
-- This is Fisher's whole "**maximize size, minimize risk**" idea: when signals stack, the stop gets tighter, so you put on more contracts for the *same* risk.
+# PART C — THE SETUPS (how it's actually traded)
 
-**Time-stop:** if price just sits inside the pivot range longer than **3× the opening-range duration** (~45 min), the pivot is "meaningless for the day" → exit, move on. *(Ch. 3, pp. 61–62)*
+*(Ch.3 "Putting It Together" pp.55–76; Glossary)*
 
-## The spicy one: the "failed-A rubber band"
-When price reaches the A level but **fails to hold** and snaps back — especially near the pivot range — you **fade it** (short a failed A up / buy a failed A down). Tiny risk (stop = the A level itself), large potential reward. Fisher's worked example: *"you made 126 ticks and risked 4."* *(Ch. 1, pp. 27–28)* This is a reversal trade ORB doesn't have, and it's some of the best reward:risk in the book.
+1. **A through the pivot** *(best base setup)* — A up (or down) that also clears the **whole pivot band** in the same direction. Two signals agree → **stop tightens to the opposite side of the band**, so **size up**. *(pp.56–59; Glossary "Point A through the pivot" p.246)*
+2. **Failed A against the pivot** — failed A that snaps back at/within the band → fade; stop = far side of band or a time stop. *(p.65)*
+3. **Point C through the pivot** *(rare, "once in a blue moon")* — OR entirely on one side of the pivot, market makes A the other way, then reverses **all the way through the OR and the pivot** to make C through the band → high-conviction, **double size**, stop = far side of band. *(pp.65–69)*
+4. **Late-day Point C pivot** *(the "Rolls-Royce", highest probability)* — a C-through-pivot late in the session traps those who must liquidate by the close → carry overnight **only if** the close is beyond both the pivot and the C level. *(pp.69–71; Glossary p.243)*
+5. **Pivot first-hour high/low** *(trend-day detector)* — if the daily pivot band **engulfs the first-hour high (or low)**, an A forms in the first hour, and price closes the first hour **within ~15% of the extreme** in the trade direction → enter; stop = first-hour extreme; time stop = **2× OR**. *(pp.71–74)*
+6. **Treacherous trade / System-failure trade** — fades with **no defined stop** in choppy/failed conditions; take profits fast. *(pp.74–75)*
 
----
-
-## Fisher's actual S&P 500 numbers (Appendix, Table A.5, p. 222)
-| | Value (2001) | As % of price (S&P ≈ 1,135 then) |
-|---|---|---|
-| Opening range | **15 minutes** (9:30–9:45 ET) | — |
-| **A value** | **2 points** | **≈ 0.18%** |
-| **C value** | **1.5 points** | **≈ 0.13%** |
-
-> ⚠️ **These are 2001 values.** Two literal points on today's SPX (~5,400) is a rounding error. We port them as a **% of price**: A ≈ 0.18%, C ≈ 0.13% → on SPX 5,400 that's roughly **A ≈ 9–10 pts, C ≈ 7 pts**. Treat these as **starting anchors to backtest around**, not gospel — they're also pre-decimalization and may not be apples-to-apples with today's ES.
+**Position sizing by confluence ("maximize size, minimize risk")** *(Ch.3 pp.60–61)*: total risk = stop-distance × tick-value × contracts. When the pivot stop replaces the wider B/D stop, the stop shrinks (e.g., 25→10 ticks) → trade **2.5–4× more contracts for the SAME dollar risk**. Stack signals (A + pivot + 30-day cycle) → size up further (e.g., 10 → 20–30 contracts).
 
 ---
 
-## ⚠️ The big honest gap for automation
-**Fisher deliberately does NOT publish how the A and C values are calculated.** He says only that they're *"based on proprietary research... volatility measurements,"* and lists static per-instrument numbers (the table above) without a formula. There is **no "A = X% of ATR" rule anywhere in the book.**
+# PART D — MACRO ACD (the multi-day system we never built)
 
-**What this means for our bot:** we cannot port his formula because he doesn't give one. We have to **engineer our own volatility-based A value** and tune it by backtest. The clean plan:
-1. Start from his anchor: **A ≈ 0.18% of price, C ≈ 0.13%** (or equivalently a fraction of recent ATR / average daily range).
-2. Backtest a sweep of that fraction (like we swept delta/wings on the condor) to see what actually works on SPX in our 3-year data window — judged on **cross-regime robustness, not curve-fit.**
+## D1. The Number Line  *(Ch.4; Glossary "Number line" p.245)*
+- Score each day: **+2** (A-up held & close above OR), **−2** (A-down & close below OR), **+4** (C-up & close above), **−4** (C-down & close below); partial/mixed = ±1/±3; else **0**. *(Midterm: good A-down = −2, good C-up = +4.)*
+- Keep a **30-trading-day cumulative sum**. When it moves from ~0 to **±9 and holds ≥2 consecutive days** → statistically significant **trend confirmation** (trade that direction, size up, can hold overnight).
+- **System-failure fade:** if ±9 triggers but the market doesn't follow through in 2–3 sessions and the line falls back below ±9 → **fade** (the failed macro signal is itself a setup).
+- **Chop filter:** while the line hovers in ±4, **avoid trend trades** — this is ACD's answer to choppy markets (which is exactly what killed our momentum version). Change-in-trend calendar (proprietary) flags 2–3 likely reversal days per month.
 
-This is a feature, not a bug: it's exactly the kind of honest, measurable engineering this project is for.
+## D2. The Reversal Trade — *Fisher's best system, 2–3 yrs*  *(Ch.6 pp.139–144; Glossary p.247)*
+- **Two consecutive A signals the SAME direction**, then the **next A the OPPOSITE direction beyond the extreme** of the two → trapped traders forced to cover → enter with the reversal. Bigger the gap between the two A's and the opposing A, the better (gap openings amplify it).
+- Invalidated by: 3+ consecutive same-direction A's; any A/B/C/D between the two A's; too many neutral days. Manage the exit via normal ACD (C or next opposite A).
+
+## D3. TRT (Trend Reversal Trade) & MAH  *(Ch.6 pp.146–151; Glossary pp.243,249)*
+- After a **sustained trend**, a **gap to a new high/low** (stronger after a holiday = **"Mad As Hell"**), then a **hard A against the trend**, then a **failed C** in the trend direction, then price retraces into the OR / prior-day range → **fade** (huge reversals; the 1929 top and 1932 bottom are the examples). Stop = the failed-C level; time stop = 2× OR.
+
+## D4. Pivot Moving Averages (regime classifier)  *(Ch.5; Glossary pp.244–246)*
+- MAs of the **daily pivot** (not close), periods **14 / 30 / 50**. **Judge the SLOPE, not crossovers.**
+  - All three up → **bullish**; all down → **bearish**; flat & parallel → **neutral** (stand aside); diverging → **confused** (chop).
+- Strategies: **MAS** (trade in the slope direction on an A signal), **MAF** (fake-out: in a trend, price dips to but not through the 30-day PMA then re-crosses the 14-day → re-enter), **MAD** (divergence: in confused/neutral PMAs with a point of reference + island reversal → fade the extreme). "Kindergarten trader": slopes up→long, down→short, flat/confused→flat.
+
+## D5. Exit tools  *(Ch.6)*
+- **Momentum:** today's close vs. close **8 days ago**; a sign flip = exit even if price hasn't moved against you. *(pp.137–139)*
+- **Rolling pivot (3–6 day)** catching up to price = momentum lost → exit. *(pp.133–137)*
+- **Sushi Roll:** 5 rolling bars (days, or 5×10-min) — when the latest 5 take out the prior 5's high & low and **close** beyond the prior 5's extreme → reversal warning. **Outside Reversal Week** = the weekly version (Enron, 1929/1932 examples). *(pp.152–160; Glossary p.248)*
 
 ---
 
-## Honest assessment for OUR project
-**Pros**
-- The **time-hold trigger directly attacks ORB's #1 enemy** (whipsaw fakeouts). Natural A/B comparison: same opening-range family, but does "wait for it to stick" actually beat "trade the raw break"?
-- **Defined reference points everywhere** (B, D, pivot) → clean, mechanical stops, easy to code honestly.
-- Reuses our engine: data loaders, intraday path-from-options, backtest reporting, sizing layer.
-- The **pivot range** is a cheap, powerful trend filter we could even retrofit onto ORB later.
+## E. Honest gaps & how we handle them
+1. **A/C-value formula is proprietary** — port as % of price / ATR fraction, anchor at the Appendix numbers (S&P A≈17.5, C≈20.5 in 2001 ticks; ≈0.15–0.20% of price), **backtest-tune**, judge on cross-regime robustness.
+2. **Some Appendix values illegible** in the scan (natural gas A, several C's) — we don't need them (SPX-focused, and we tune anyway).
+3. **Number-line partial scores (±1/±3)** are edge cases — implement core ±2/±4/0 first.
+4. **Instrument matters:** Fisher's world is **futures/commodities that TREND** (energies, metals, bonds). The trend/breakout setups (A-held, reversal-trade, TRT, number-line) are built for trending instruments; **SPX index mean-reverts** (we proved it). Building the FULL method lets us test it on the right instruments (energy/commodity ETFs, individual momentum stocks, futures) — not just SPX.
 
-**Cons / red flags**
-- **More intraday logic than ORB:** we must track a sub-bar clock ("has price held above A for 7.5 min?"), not just "did it cross." More state to get right.
-- **The proprietary A-value gap** means a chunk of the "edge" is ours to rediscover by backtest — no guarantee our tuned value reproduces Fisher's results.
-- It's a **discretionary system with many setups** (A, C, failed-A, late-day C, first-hour pivot...). For a v1 bot we must pick the **one core mechanical setup** (likely: A-through-pivot, hold-time enforced) and ignore the rest, or it becomes unbuildable.
-- ACD is a **directional futures/stock** system. Like ORB, we'd express it on SPX via options — wrapper **TBD after this writeup** (credit spread vs. long option). *[open decision]*
+## F. What we MISSED (the case for the full build)
+Our shelved v1 = **only** A-held breakout + pivot *filter* + a naive 3-day trailing stop. The full method adds, all UNbuilt:
+- **Failed-A / Failed-C rubber-band reversals** (mean-reversion — fits SPX!).
+- **A/C through the pivot; late-day C pivot** (the highest-probability setups).
+- **The Reversal Trade** (Fisher's best) and **TRT/MAH**.
+- **The number line** (trend confirm + **chop filter** — would have vetoed the losing choppy trades).
+- **Pivot moving averages** (regime classifier: only trend-trade when PMAs agree).
+- **Confluence sizing, momentum/rolling-pivot/sushi exits.**
+- **Instrument flexibility** (the method is designed for trending futures/commodities, not the mean-reverting SPX index).
 
-## Open build decisions (to settle before coding)
-1. **Options wrapper** — credit spread (ORB-style, reuse everything) vs. buy directional options. *Deferred by user until the strategy is clear; now it is — revisit next.*
-2. **A/C value derivation** — fixed % of price (≈0.18% / 0.13%) vs. fraction-of-ATR; then a sweep to tune. *This is the heart of the build.*
-3. **Which setup(s) for v1** — recommend starting with the single **"A (held) through the pivot"** long/short, stop at the pivot band, time-stop at 3× the range. Add failed-A and C trades only if v1 shows promise.
-4. **Entry window** — by when must the A form (ORB used ~noon)? TBD.
-
-## Meta-lessons worth keeping
-1. **Time > price.** Fisher's core edge over a naive breakout is *patience* — make the move prove itself. If our backtest confirms this beats raw ORB, that's a genuine, transferable insight.
-2. **When a vendor hides the formula, the honest move is to rebuild it measurably** — not to pretend we know it. Our A-value sweep is that, out loud.
-3. **Don't build all of ACD.** The book has a dozen setups; a good bot does *one* of them well. Same discipline as Kirk's "nothing beat the baseline." ([[project-goal]])
+→ Next: design the **complete, instrument-agnostic ACD engine + options overlay** from this spec.
