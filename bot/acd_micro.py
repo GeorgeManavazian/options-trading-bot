@@ -248,21 +248,26 @@ def setups_from_c(c_event, lv, spec, close):
 
 
 def setups_from_failed(events, lv, spec):
-    """Fade failed A/C. A failed-A fade is invalidated if the SAME-side A later holds
-    (the move that made it hold would have taken out the fade's stop)."""
+    """Fade failed A/C. A failed-A fade is invalidated ONLY if a SAME-side A has ALREADY
+    held by the time the fade fires (its confirm time <= the fade's time). An A that holds
+    LATER is unknowable at the fade's entry, so it must NOT retroactively delete the fade —
+    that was a look-ahead bug that flattered every fade backtest (V5, crude); see the replay
+    audit. (This engine breaks on the first held A, so a same-side hold always confirms after
+    the failed-A that preceded it — this rule therefore keeps those genuine live fades.)"""
     lo, hi = lv.pivot_band
-    held_a_up = any(e.type == "A_up" and e.held for e in events)
-    held_a_down = any(e.type == "A_down" and e.held for e in events)
+    held_up_times = [_to_min(e.time) for e in events if e.type == "A_up" and e.held]
+    held_down_times = [_to_min(e.time) for e in events if e.type == "A_down" and e.held]
+    held_by = lambda times, t: any(h <= t for h in times)   # same-side A already held at/before t?
     out = []
     for e in events:
-        if e.type == "failed_A_up" and not held_a_up:   # fade a failed up-breakout -> short
+        if e.type == "failed_A_up" and not held_by(held_up_times, _to_min(e.time)):   # fade a failed up-breakout -> short
             if lo <= lv.a_up <= hi:
                 out.append(Setup("failed_a_pivot", "short", e.time, lv.a_up, hi, 2, "intraday",
                                  {"pivot_band": lv.pivot_band}))
             else:
                 out.append(Setup("failed_a", "short", e.time, lv.a_up, lv.a_up + spec.tick, 1,
                                  "intraday", {"a": lv.a_up}))
-        elif e.type == "failed_A_down" and not held_a_down:  # fade a failed down-breakout -> long
+        elif e.type == "failed_A_down" and not held_by(held_down_times, _to_min(e.time)):  # fade a failed down-breakout -> long
             if lo <= lv.a_down <= hi:
                 out.append(Setup("failed_a_pivot", "long", e.time, lv.a_down, lo, 2, "intraday",
                                  {"pivot_band": lv.pivot_band}))
@@ -376,12 +381,17 @@ if __name__ == "__main__":
     assert fp and fp[0].direction == "short" and fp[0].conviction == 2, _names(d.setups)
     print("failed_a_pivot OK")
 
-    # --- failed-A fade dropped once the same-side A later HOLDS ---
+    # --- LIVE-SAFE: a failed-A fade that fired BEFORE the same-side A later holds is KEPT ---
+    # The fade fires at 09:50 (A_up not yet held); A_up only holds at ~10:30. Live you cannot
+    # know the 10:30 hold at 09:50, so it must NOT retroactively delete the fade. Dropping it
+    # was a look-ahead bug that flattered every fade backtest (V5, crude) — see replay_audit_cl.
     fa_then_a = OR + [("09:50", 5020), ("09:52", 5000), ("10:20", 5020), ("10:30", 5023)]
     d = build_day("D2c", fa_then_a, PIV_BELOW)
-    assert not any(s.name == "failed_a" for s in d.setups), "failed_a must be dropped"
-    assert any(e.type == "A_up" and e.held for e in d.events)
-    print("failed_a OK: dropped when same-side A later holds")
+    a_hold = next(e for e in d.events if e.type == "A_up" and e.held)
+    fade = [s for s in d.setups if s.name == "failed_a"]
+    assert fade, "failed_a fade that fired before a LATER A-hold must be KEPT (live-safe)"
+    assert _to_min(fade[0].entry_time) < _to_min(a_hold.time), "fade fired before the A-hold"
+    print("failed_a OK: KEPT when same-side A holds LATER (live-safe; was a look-ahead drop)")
 
     # --- A up held, B, C_down held: plain c (band below -> NOT through pivot) ---
     seq = OR + [("09:50", 5020), ("09:58", 5023), ("10:10", 4996),
